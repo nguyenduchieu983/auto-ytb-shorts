@@ -21,6 +21,7 @@ export async function migrate(pool: Pool, memory = false): Promise<void> {
   try {
     if (!memory) await client.query('SELECT pg_advisory_lock(74619320)');
     await client.query(await readFile(resolve('migrations/001_initial.sql'), 'utf8'));
+    await client.query(await readFile(resolve('migrations/002_manual_runs.sql'), 'utf8'));
   } finally {
     if (!memory) await client.query('SELECT pg_advisory_unlock(74619320)');
     client.release();
@@ -57,7 +58,12 @@ export class Repository {
   }
   async today(date: string): Promise<Run | null> {
     return (
-      (await this.pool.query('SELECT * FROM daily_runs WHERE run_date=$1', [date])).rows[0] || null
+      (
+        await this.pool.query(
+          'SELECT * FROM daily_runs WHERE run_date=$1 ORDER BY created_at DESC,id DESC LIMIT 1',
+          [date],
+        )
+      ).rows[0] || null
     );
   }
   async steps(id: string, revision: number): Promise<StepRow[]> {
@@ -93,15 +99,16 @@ export class Repository {
       ).rows,
     };
   }
-  async create(date: string, mock: boolean): Promise<Run> {
+  async create(date: string, mock: boolean, requestKey = `daily:${date}`): Promise<Run> {
     return this.tx(async (c) => {
       const id = randomUUID();
       const inserted = await c.query(
-        'INSERT INTO daily_runs (id,run_date,mock) VALUES ($1,$2,$3) ON CONFLICT (run_date) DO NOTHING RETURNING *',
-        [id, date, mock],
+        'INSERT INTO daily_runs (id,run_date,mock,request_key) VALUES ($1,$2,$3,$4) ON CONFLICT (request_key) DO NOTHING RETURNING *',
+        [id, date, mock, requestKey],
       );
       if (!inserted.rows.length)
-        return (await c.query('SELECT * FROM daily_runs WHERE run_date=$1', [date])).rows[0];
+        return (await c.query('SELECT * FROM daily_runs WHERE request_key=$1', [requestKey]))
+          .rows[0];
       if (inserted.rows[0].id !== id) return inserted.rows[0];
       for (const step of STEPS)
         await c.query('INSERT INTO pipeline_steps (run_id,revision,step) VALUES ($1,1,$2)', [

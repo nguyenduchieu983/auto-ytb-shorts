@@ -2,7 +2,8 @@ import { readFile, stat } from 'node:fs/promises';
 import { Config } from '../config';
 import { PermanentError, Run } from '../domain';
 
-export type TelegramCommand = { action: 'gen-new-video'; actor: string } | ExistingTelegramCommand;
+export type TelegramCommand =
+  { action: 'gen-new-video'; actor: string; requestKey: string } | ExistingTelegramCommand;
 export interface ExistingTelegramCommand {
   action: 'publish' | 'regenerate' | 'skip' | 'status';
   runId: string;
@@ -28,7 +29,13 @@ export function parseTelegramUpdate(update: any, c: Config): TelegramCommand {
     action = parts[0]?.replace(/^\//, '').split('@')[0];
   if (['gen-new-video', 'gen_new_video'].includes(action)) {
     if (parts.length !== 1) throw new PermanentError('Use /gen-new-video without arguments');
-    return { action: 'gen-new-video', actor: `telegram:${user}` };
+    if (!Number.isSafeInteger(update.update_id) || update.update_id < 0)
+      throw new PermanentError('Missing Telegram update ID');
+    return {
+      action: 'gen-new-video',
+      actor: `telegram:${user}`,
+      requestKey: `telegram:${update.update_id}`,
+    };
   }
   if (
     !['publish', 'regenerate', 'skip', 'status'].includes(action) ||

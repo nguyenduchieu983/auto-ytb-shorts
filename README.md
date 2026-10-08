@@ -112,7 +112,7 @@ Mặc định `TELEGRAM_UPDATE_MODE=polling`: worker nhận lệnh bằng long p
 
 Muốn dùng webhook thì đặt `TELEGRAM_UPDATE_MODE=webhook`, restart API/worker và cấu hình webhook như dưới đây. Polling mode không nhận HTTP webhook.
 
-Đăng ký webhook qua Bot API `setWebhook` với HTTPS URL trỏ tới `/telegram/webhook` và `secret_token` đúng giá trị `.env`. Webhook ghi update vào inbox bền vững; worker xử lý theo `update_id`. Cần cả chat ID và user ID đúng whitelist. Lệnh `/gen-new-video` không cần tham số, tạo/lấy run trong ngày. Các command thao tác run cần ID và revision:
+Đăng ký webhook qua Bot API `setWebhook` với HTTPS URL trỏ tới `/telegram/webhook` và `secret_token` đúng giá trị `.env`. Webhook ghi update vào inbox bền vững; worker xử lý theo `update_id`. Cần cả chat ID và user ID đúng whitelist. Lệnh `/gen-new-video` không cần tham số, tạo run mới cho mỗi tin nhắn mới, kể cả cùng ngày; Telegram gửi lại cùng `update_id` chỉ nhận lại run đã tạo. Các command thao tác run cần ID và revision:
 
 ```text
 /gen-new-video
@@ -142,7 +142,7 @@ Upload private có status `UPLOADED_PRIVATE`; chỉ `PUBLISHED` khi response xá
 
 ## Scheduler và phục hồi
 
-Mặc định `SCHEDULE_ENABLED=false`, `AUTO_PUBLISH=false`, privacy private. Sau khi đã chạy manual live thành công, bật `SCHEDULE_ENABLED=true`; worker đăng ký BullMQ Job Scheduler lúc 07:30 `Asia/Ho_Chi_Minh`. Một run duy nhất cho mỗi ngày địa phương, timestamp DB lưu UTC.
+Mặc định `SCHEDULE_ENABLED=false`, `AUTO_PUBLISH=false`, privacy private. Sau khi đã chạy manual live thành công, bật `SCHEDULE_ENABLED=true`; worker đăng ký BullMQ Job Scheduler lúc 07:30 `Asia/Ho_Chi_Minh`. Scheduler/API mặc định dùng một run cho mỗi ngày địa phương; lệnh Telegram tạo các run độc lập. Timestamp DB lưu UTC.
 
 DB transaction ghi trạng thái bước và outbox cùng nhau. Dispatcher đẩy outbox vào BullMQ với job ID `runId-step-rN`. Job hoàn thành không được chạy lại nếu step đã thành công. Các bước assets chạy độc lập; render chờ visuals và subtitles. Worker heartbeat lease; lease hết hạn được đưa lại vào outbox. Retry tạm thời tối đa 3 lần thực thi; `FAILED`, `NEEDS_REVISION`, `SKIPPED`, `UPLOAD_UNCERTAIN` được lưu với step/lỗi cụ thể.
 
@@ -169,7 +169,7 @@ Voice live đọc cả bản tin trong **một request** để giữ giọng/cad
 
 Storyboard chia lời bằng code thành khoảng 10 nhịp, AI chỉ thiết kế hình cho lời đã khóa: minh họa chủ thể, số liệu có nguồn, diễn giải tác động và kết luận. Typography/source nằm trên lớp cố định; nền có chuyển động nhẹ luân phiên. Hình AI ghi rõ minh họa, không đóng vai ảnh sản phẩm chính thức. `OPENAI_IMAGE_QUALITY=medium` mặc định; thay đổi chất lượng có thể tăng chi phí. Hình lỗi dùng card và ghi fallback. Chất lượng cảm nhận vẫn cần xem/nghe preview; technical QC không đo mức hấp dẫn hay bảo đảm lượt xem.
 
-Chống trùng gồm canonical URL/tiêu đề và kiểm tra **cùng sự kiện** bằng model trước khi rank. Lịch sử 90 ngày lấy đúng `rank.selected` của revision hiện tại ở video đã upload/public hoặc đang chờ duyệt/upload (kể cả upload chưa rõ kết quả); bỏ mock, skipped/failed và chính run đang tạo lại. Khác báo, URL hay cách giật title vẫn bị loại nếu cùng sự kiện. Follow-up chỉ giữ khi có diễn biến mới cụ thể. Quyết định/lý do nằm trong `rank/novelty.json`. Đây là phân loại có thể sai, không cam kết loại trùng tuyệt đối; giữ duyệt thủ công. Ràng buộc một run/ngày và approval/upload idempotency vẫn áp dụng.
+Chống trùng gồm canonical URL/tiêu đề và kiểm tra **cùng sự kiện** bằng model trước khi rank. Lịch sử 90 ngày lấy đúng `rank.selected` của revision hiện tại ở video đã upload/public hoặc đang chờ duyệt/upload (kể cả upload chưa rõ kết quả); bỏ mock, skipped/failed và chính run đang tạo lại. Khác báo, URL hay cách giật title vẫn bị loại nếu cùng sự kiện. Follow-up chỉ giữ khi có diễn biến mới cụ thể. Quyết định/lý do nằm trong `rank/novelty.json`. Đây là phân loại có thể sai, không cam kết loại trùng tuyệt đối; giữ duyệt thủ công. Telegram chống xử lý trùng theo `update_id`; mỗi tin nhắn mới được tạo run riêng. Approval/upload vẫn idempotent theo run và revision.
 
 Tạo preview cải tiến từ tin đã chọn của một run, **không sửa run, không gửi Telegram, không upload**:
 

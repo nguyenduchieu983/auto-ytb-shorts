@@ -6,7 +6,7 @@ Cập nhật: 08/10/2026. Tài liệu độc lập cho phiên bản có voice li
 
 - Chạy Node.js, PostgreSQL và Redis trên máy local. **Không Docker, không cần public domain/tunnel.**
 - Chủ động gửi **`/gen-new-video`** vào Telegram để bắt đầu. `SCHEDULE_ENABLED=false`; cron không chạy.
-- Một run cho mỗi ngày theo `Asia/Ho_Chi_Minh`. Gửi lệnh nhiều lần trả lại run trong ngày, không sinh nhiều video. Ngày hôm sau sẽ tạo run mới.
+- Mỗi tin nhắn `/gen-new-video` mới tạo một run riêng, kể cả cùng ngày. Chỉ khi Telegram gửi lại cùng `update_id` thì dùng lại run đã tạo.
 - Pipeline gửi preview để người dùng duyệt. `AUTO_PUBLISH=false`; upload mặc định **private**.
 - Local nghĩa là chương trình và dữ liệu chạy trên máy; OpenAI, Telegram, YouTube và việc đọc tin vẫn cần internet/tài khoản API.
 - Muốn tiếp tục máy cũ: chuyển **code + .env + PostgreSQL backup + storage**. Muốn cài mới không giữ lịch sử: code + cấu hình tài khoản là đủ, nhưng mất khả năng đối chiếu các tin cũ đã đăng trên máy trước.
@@ -16,7 +16,7 @@ Cập nhật: 08/10/2026. Tài liệu độc lập cho phiên bản có voice li
 ```text
 Telegram /gen-new-video
   → polling trong worker → PostgreSQL inbox → kiểm tra admin và update_id
-  → tạo/lấy run hôm nay → transactional outbox → BullMQ/Redis
+  → tạo run riêng theo Telegram update_id → transactional outbox → BullMQ/Redis
   → discover → rank + kiểm tra trùng sự kiện → script → verify
   → storyboard chia lời bằng code, AI thiết kế hình
   → voice ───────────→ subtitles ──┐
@@ -260,7 +260,7 @@ Khi nhận preview, **copy nguyên dòng gồm ID và revision**:
 
 Không gõ dấu `< >` thật; thay bằng dữ liệu bot trả. Bấm riêng chữ `/publish` thường chỉ gửi tên lệnh, không mang các tham số bên cạnh.
 
-Nếu hôm nay đã có run: `/gen-new-video` trả lại run đó. Với run lỗi/skip cần regenerate phù hợp; với video đã upload không tạo lại cùng ngày bằng lệnh này. Muốn thay đổi quy tắc nhiều video/ngày cần sửa thiết kế run, không xóa DB để lách.
+Gửi `/gen-new-video` lần nữa sẽ tạo run mới độc lập, dù run cũ đang lỗi, chờ duyệt hay đã upload. Run cũ và phiên upload của nó được giữ nguyên để retry/đối soát. Không có giới hạn một video/ngày cho lệnh này; chống trùng tin vẫn thực hiện tại bước rank. API tạo run mặc định và scheduler vẫn dùng khóa theo ngày.
 
 | Trạng thái | Cần hiểu/làm gì |
 | --- | --- |
@@ -332,7 +332,7 @@ npm.cmd run news:discover
 npm.cmd run video:preview -- <runId>
 ```
 
-- `check`: TypeScript + tests (56 tests ở bản tài liệu này).
+- `check`: TypeScript + tests (58 tests ở bản tài liệu này).
 - `news:discover`: API thật tìm/extract/rank, không tạo video, không đổi run/queue, không gửi Telegram/YouTube. Đây là audit discovery, không chứng minh đầy đủ history novelty của pipeline chính.
 - `video:preview`: dùng tin của run đã có, tạo preview riêng. Không thay run/revision, không upload, không có command publish cho file preview riêng.
 - `demo`: hoàn toàn mock nội dung/provider, FFmpeg thật, không đánh giá chất lượng TTS thật.
@@ -424,7 +424,7 @@ npm.cmd run worker
 | --- | --- |
 | Bot gửi preview nhưng không nhận command | Worker/polling có chạy không; đúng chat/user IDs; chỉ một consumer; xem stdout/stderr |
 | `/publish` không chạy | Gửi đầy đủ runId + revision, không chỉ bấm tên lệnh |
-| `/gen-new-video` trả video hôm nay | Đúng quy tắc một run/ngày; regenerate nếu muốn sửa bản chưa upload |
+| `/gen-new-video` trả lại cùng run | Chỉ đúng khi cùng Telegram update được gửi lại; tin nhắn mới phải tạo run mới. Kiểm tra đã migrate và restart đúng bản mới |
 | `redirect_uri_mismatch` | Web OAuth client đăng ký đúng `http://127.0.0.1:8765/oauth/callback` |
 | Redis lỗi sau reboot | Mở WSL, chạy `redis:start`, restart API/worker vì IP đã đổi |
 | DB password authentication failed | DATABASE_URL và role password phải khớp; db:init không đổi password role có sẵn |
@@ -447,7 +447,7 @@ npm.cmd run worker
 - [ ] Credentials đúng tài khoản/kênh, không nằm trong Git/tài liệu.
 - [ ] History/approval/asset checksum được giữ nếu chuyển dữ liệu.
 - [ ] Máy cũ không còn nhận command/chạy worker.
-- [ ] `/status` được bot phản hồi; `/gen-new-video` chỉ tạo/lấy một run hôm nay.
+- [ ] `/status` được bot phản hồi; `/gen-new-video` tạo run mới cho mỗi tin nhắn; cùng update gửi lại không tạo trùng.
 - [ ] Nghe/xem preview thật trước publish; xác nhận YouTube private ở đúng kênh.
 
 ## 12. Tài liệu chính thức để đối chiếu khi môi trường thay đổi
@@ -459,3 +459,7 @@ npm.cmd run worker
 - YouTube resumable upload: https://developers.google.com/youtube/v3/guides/using_resumable_upload_protocol
 
 Các command/pipeline/config trong tài liệu được đối chiếu source tại thời điểm cập nhật. Việc setup trên một máy mới vẫn cần chạy doctor/check và một lượt kiểm chứng live tại máy đó; tài liệu không thay thế credentials/dịch vụ/dữ liệu thật.
+
+### Nâng cấp cơ chế tạo nhiều run thủ công
+
+Dừng API/worker trước khi chạy `npm.cmd run migrate`, rồi khởi động lại cả hai. Migration `002_manual_runs.sql` giữ nguyên run/revision/upload cũ, thêm khóa `request_key` và bỏ unique theo ngày. Không chạy source cũ sau migration này.

@@ -10,6 +10,7 @@ test('Manual generate command requires admin, accepts no IDs and rejects extra a
   c.TELEGRAM_ADMIN_CHAT_ID = '10';
   c.TELEGRAM_ADMIN_USER_IDS = '20';
   const update = (text: string, user = 20) => ({
+    update_id: 100,
     message: { chat: { id: 10 }, from: { id: user }, text },
   });
   try {
@@ -24,31 +25,37 @@ test('Manual generate command requires admin, accepts no IDs and rejects extra a
     await pool.end();
   }
 });
-test('Manual generation uses daily idempotency; repeated command cannot create another video', async () => {
+test('Each manual update creates a new run even when an earlier same-day run failed upload; redelivery reuses its run', async () => {
   const { repo, c, pool } = await setup();
   const pipeline = new Pipeline(c, repo);
   try {
-    const cmd = { action: 'gen-new-video', actor: 'telegram:20' } as const;
-    const first = await handleTelegramCommand(pipeline, cmd),
-      second = await handleTelegramCommand(pipeline, cmd);
-    assert.equal(first, second);
-    assert.equal((await pool.query('SELECT * FROM daily_runs')).rows.length, 1);
-    assert.equal((await repo.outbox()).length, 1);
-    const run = (await pool.query('SELECT * FROM daily_runs')).rows[0];
-    await pool.query("UPDATE daily_runs SET status='WAITING_APPROVAL' WHERE id=$1", [run.id]);
-    const existing = await handleTelegramCommand(pipeline, cmd);
-    assert.match(existing, /Không tạo thêm/);
-    assert.ok(existing.includes(`/publish ${run.id} 1`));
-    await pool.query("UPDATE daily_runs SET status='FAILED' WHERE id=$1", [run.id]);
-    // This fixture database is pg-mem, not the local production database.
+    const cmd = {
+      action: 'gen-new-video',
+      actor: 'telegram:20',
+      requestKey: 'telegram:101',
+    } as const;
+    const first = await handleTelegramCommand(pipeline, cmd);
+    assert.equal(await handleTelegramCommand(pipeline, cmd), first);
+    const old = (await pool.query('SELECT * FROM daily_runs')).rows[0];
+    await pool.query("UPDATE daily_runs SET status='FAILED' WHERE id=$1", [old.id]);
     await repo.saveUpload(
-      { runId: run.id, revision: 1, step: 'upload' },
+      { runId: old.id, revision: 1, step: 'upload' },
       'UPLOADING',
-      'test-session',
+      'existing-session',
     );
-    const failed = await handleTelegramCommand(pipeline, cmd);
-    assert.match(failed, /phiên upload/);
-    assert.ok(!failed.includes('/regenerate'));
+    const second = await handleTelegramCommand(pipeline, { ...cmd, requestKey: 'telegram:102' });
+    assert.notEqual(second, first);
+    assert.equal((await pool.query('SELECT * FROM daily_runs')).rows.length, 2);
+    assert.equal((await repo.outbox()).length, 2);
+    assert.equal((await repo.get(old.id)).status, 'FAILED');
+    assert.equal(
+      (await repo.upload({ runId: old.id, revision: 1, step: 'upload' })).session_uri,
+      'existing-session',
+    );
+    assert.equal(
+      await handleTelegramCommand(pipeline, { ...cmd, requestKey: 'telegram:102' }),
+      second,
+    );
   } finally {
     await pool.end();
   }

@@ -5,7 +5,7 @@ import { resolve } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { z } from 'zod';
 import { setup } from './helpers';
-import { YoutubeProvider } from '../src/providers/youtube';
+import { YoutubeProvider, uploadNetworkError } from '../src/providers/youtube';
 import { OpenAiProvider } from '../src/providers/openai';
 import { metadataSchema, UploadUncertainError } from '../src/domain';
 import { mockNews, mockScript } from '../src/mock';
@@ -63,7 +63,7 @@ test('Resumable upload retries use the same session after lost completion respon
   };
   try {
     const provider = new YoutubeProvider(c, repo);
-    await assert.rejects(provider.publish(w, path, metadata, false), /network loss/);
+    await assert.rejects(provider.publish(w, path, metadata, false), /chunk transfer failed/);
     const result = await provider.publish(w, path, metadata, false);
     assert.equal(result.video_id, 'abcdefghijk');
     assert.equal(inserts, 1);
@@ -439,6 +439,44 @@ test('Script stops after bounded attempts when narration is too short or too lon
       assert.equal(calls, 3);
     }
   } finally {
+    await pool.end();
+  }
+});
+
+test('Upload network diagnostics retain safe cause codes without leaking session URLs', () => {
+  const error = new TypeError(
+    'fetch failed https://www.googleapis.com/upload/youtube?secret=token',
+    { cause: { code: 'ECONNRESET', message: 'secret-token' } },
+  );
+  assert.match(uploadNetworkError('chunk transfer', error).message, /ECONNRESET/);
+  assert.ok(!uploadNetworkError('chunk transfer', error).message.includes('secret'));
+});
+
+
+test('YouTube PUT derives correct byte lengths with the application Cheerio/Undici dispatcher', async () => {
+  await import('cheerio');
+  const { createServer } = await import('node:http');
+  const received: { length: string | undefined; bytes: number }[] = [];
+  const server = createServer(async (req, res) => {
+    let bytes = 0;
+    for await (const chunk of req) bytes += chunk.length;
+    received.push({ length: req.headers['content-length'], bytes });
+    res.writeHead(308);
+    res.end();
+  });
+  await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+  const { repo, pool, c } = await setup();
+  const provider = new YoutubeProvider(c, repo) as any;
+  provider.token = async () => 'test-token';
+  try {
+    const address = server.address() as { port: number };
+    const url = `http://127.0.0.1:${address.port}/upload`;
+    await provider.request(url, new Uint8Array(), 'bytes */3');
+    await provider.request(url, new Uint8Array([1, 2, 3]), 'bytes 0-2/3');
+    assert.deepEqual(received, [{ length: '0', bytes: 0 }, { length: '3', bytes: 3 }]);
+  } finally {
+    server.closeAllConnections();
+    await new Promise<void>((resolve, reject) => server.close(e => e ? reject(e) : resolve()));
     await pool.end();
   }
 });

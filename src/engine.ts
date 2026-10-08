@@ -49,8 +49,8 @@ export class Pipeline {
     this.telegram = new TelegramProvider(c);
     this.youtube = new YoutubeProvider(c, repo);
   }
-  async run(now = new Date()) {
-    return this.repo.create(localDate(now, this.c.APP_TIMEZONE), this.c.MOCK_OPENAI);
+  async run(now = new Date(), requestKey?: string) {
+    return this.repo.create(localDate(now, this.c.APP_TIMEZONE), this.c.MOCK_OPENAI, requestKey);
   }
   async execute(w: Work): Promise<void> {
     const claim = await this.repo.claim(w);

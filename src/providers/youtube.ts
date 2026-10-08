@@ -3,6 +3,19 @@ import { Config } from '../config';
 import { Repository } from '../db';
 import { Metadata, PermanentError, UploadUncertainError, Work } from '../domain';
 
+export function uploadNetworkError(stage: string, error: unknown): Error {
+  const e = error as { name?: string; cause?: { code?: string } };
+  const code = e?.cause?.code;
+  const safeCode =
+    typeof code === 'string' && /^[A-Z0-9_]+$/.test(code)
+      ? code
+      : e?.name === 'TimeoutError'
+        ? 'TIMEOUT'
+        : 'NETWORK_ERROR';
+  return new Error(
+    `YouTube ${stage} failed (${safeCode}); retry checks the saved session before sending more bytes`,
+  );
+}
 export class YoutubeProvider {
   private access?: { value: string; expires: number };
   constructor(
@@ -142,18 +155,26 @@ export class YoutubeProvider {
   }
   private async request(session: string, body: Uint8Array, range: string): Promise<Response> {
     const token = await this.token();
-    const r = await fetch(session, {
-      method: 'PUT',
-      redirect: 'manual',
-      headers: {
-        Authorization: `Bearer ${token}`,
-        'Content-Type': 'video/mp4',
-        'Content-Length': String(body.byteLength),
-        'Content-Range': range,
-      },
-      body: body as any,
-      signal: AbortSignal.timeout(120000),
-    });
+    let r: Response;
+    try {
+      r = await fetch(session, {
+        method: 'PUT',
+        redirect: 'manual',
+        headers: {
+          Authorization: `Bearer ${token}`,
+          'Content-Type': 'video/mp4',
+          'Content-Range': range,
+        },
+        // Fetch derives Content-Length from the byte array; avoid a duplicate explicit header.
+        body: body as any,
+        signal: AbortSignal.timeout(120000),
+      });
+    } catch (error) {
+      throw uploadNetworkError(
+        range.startsWith('bytes */') ? 'status probe' : 'chunk transfer',
+        error,
+      );
+    }
     if (r.status === 401) {
       this.access = undefined;
       await r.text();
