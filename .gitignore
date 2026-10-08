@@ -147,3 +147,13 @@ vite.config.ts.timestamp-*
 
 # Turbo Repo
 .turbo
+
+# AI Tech Shorts project
+node_modules/
+dist/
+storage/
+coverage/
+.env
+.env.*
+!.env.example
+*.log

@@ -1,0 +1,51 @@
+{
+  "name": "auto-ytb-shorts",
+  "version": "0.1.0",
+  "private": true,
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "start": "node dist/main.js",
+    "worker": "node dist/worker.js",
+    "dev": "tsx src/main.ts",
+    "dev:worker": "tsx src/worker.ts",
+    "migrate": "tsx scripts/migrate.ts",
+    "setup": "tsx scripts/init-env.ts",
+    "doctor": "tsx scripts/doctor.ts",
+    "db:init": "tsx scripts/init-db.ts",
+    "test:redis": "tsx scripts/redis-smoke.ts",
+    "redis:start": "tsx scripts/local-redis.ts",
+    "test:native": "tsx scripts/native-smoke.ts",
+    "demo": "tsx scripts/demo.ts",
+    "test": "tsx --test test/*.test.ts",
+    "check": "npm run build && npm test",
+    "format": "prettier --write src scripts test package.json tsconfig.json README.md",
+    "oauth": "tsx scripts/oauth.ts"
+  },
+  "dependencies": {
+    "@nestjs/common": "^11.1.0",
+    "@nestjs/core": "^11.1.0",
+    "@nestjs/platform-express": "^11.1.0",
+    "bullmq": "^5.61.0",
+    "dotenv": "^16.6.0",
+    "ioredis": "^5.7.0",
+    "pg": "^8.16.0",
+    "reflect-metadata": "^0.2.2",
+    "rxjs": "^7.8.2",
+    "sharp": "^0.34.0",
+    "zod": "^3.25.0",
+    "zod-to-json-schema": "^3.24.0"
+  },
+  "devDependencies": {
+    "@ffmpeg-installer/ffmpeg": "^1.1.0",
+    "@ffprobe-installer/ffprobe": "^2.1.2",
+    "@types/node": "^22.18.0",
+    "@types/pg": "^8.15.0",
+    "pg-mem": "^3.0.5",
+    "prettier": "^3.9.9",
+    "tsx": "^4.20.0",
+    "typescript": "^5.9.0"
+  }
+}
