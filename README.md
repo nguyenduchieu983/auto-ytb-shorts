@@ -86,6 +86,8 @@ Trong `.env`, đặt `OPENAI_API_KEY`, `MOCK_OPENAI=false`, chọn các model qu
 
 Web Search chạy trên Responses API; lấy URL từ citation/source annotations rồi đọc bài nguồn, chỉ chấp nhận HTTPS trên allowlist. Thời gian đăng lấy từ `datePublished` hoặc metadata publication, không lấy `dateModified`. Trang không lấy được ngày hoặc nội dung sẽ bị loại. Structured outputs có JSON schema và được kiểm tra lại bằng Zod. Fact verification dùng đoạn bằng chứng; không phải bảo đảm tuyệt đối về độ đúng của tin.
 
+Web Search bắt buộc thực hiện tìm kiếm; nếu API không trả `web_search_call`, run báo lỗi rõ thay vì coi là thiếu tin. Log trong `storage/diagnostics/<runId>/rev-<revision>/discovery-<hours>h.json` ghi nguồn, ngày công bố và lý do loại. Mặc định tìm trong 24 giờ rồi mở rộng tối đa 48 giờ. Có thể đặt `MAX_NEWS_AGE_HOURS=168` trong `.env` để thử bản tin tổng hợp 7 ngày; tin quá 24 giờ luôn đọc rõ ngày nguồn và description ghi ngày từng bài. Restart API/worker sau khi đổi cấu hình; regenerate từ `discover` để tìm lại nguồn.
+
 Prompt nằm trong `prompts/*.md` với version đầu file. Tin thiếu thì mở rộng 48h; chọn 3 tin hoặc 2 tin + 1 tool có nguồn. Không đủ thì skip. Tin đã dùng trong run đã upload sẽ bị dedup ở các ngày sau.
 
 TTS tạo riêng từng scene để có timing thật, sau đó ghép audio. Ngoài 40–65 giây cần sửa script; 45–60 giây đạt mục tiêu. Subtitle chia chunk tối đa 6 từ/2 dòng, timing theo scene và tỷ lệ từ; chưa có word alignment chính xác. Image API dùng ảnh portrait rồi scale/crop về 9:16, thẻ tiêu đề/source được render bằng code. Provider image lỗi tạm thời dùng headline card; lỗi credentials/budget dừng run.

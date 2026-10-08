@@ -68,8 +68,16 @@ export class Pipeline {
         case 'discover': {
           const now = new Date();
           let items = await this.ai.discover(w, now, 24);
-          if (items.length < 5)
-            items = dedupNews([...items, ...(await this.ai.discover(w, now, 48))]);
+          if (items.length < 5 && this.c.MAX_NEWS_AGE_HOURS > 24)
+            items = dedupNews([
+              ...items,
+              ...(await this.ai.discover(w, now, Math.min(48, this.c.MAX_NEWS_AGE_HOURS))),
+            ]);
+          if (items.length < 5 && this.c.MAX_NEWS_AGE_HOURS > 48)
+            items = dedupNews([
+              ...items,
+              ...(await this.ai.discover(w, now, this.c.MAX_NEWS_AGE_HOURS)),
+            ]);
           result = { items, discovered_at: now.toISOString() };
           break;
         }

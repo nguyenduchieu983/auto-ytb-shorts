@@ -1,4 +1,4 @@
-import { readFile, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { z } from 'zod';
@@ -70,10 +70,14 @@ export function publishedDate(html: string): string | null {
 }
 async function sourceSnapshot(
   url: string,
+  reject: (reason: string) => void,
 ): Promise<{ url: string; published_at: string; text: string } | null> {
   try {
     for (let hop = 0; hop < 5; hop++) {
-      if (!sourceAllowed(url)) return null;
+      if (!sourceAllowed(url)) {
+        reject('disallowed_url');
+        return null;
+      }
       const r = await fetch(url, {
         redirect: 'manual',
         signal: AbortSignal.timeout(20000),
@@ -83,7 +87,14 @@ async function sourceSnapshot(
         url = new URL(r.headers.get('location') || '', url).toString();
         continue;
       }
-      if (!r.ok || !r.headers.get('content-type')?.includes('text/html') || !r.body) return null;
+      if (!r.ok) {
+        reject(`http_${r.status}`);
+        return null;
+      }
+      if (!r.headers.get('content-type')?.includes('text/html') || !r.body) {
+        reject('not_html');
+        return null;
+      }
       const reader = r.body.getReader();
       const parts: Uint8Array[] = [];
       let bytes = 0;
@@ -93,13 +104,17 @@ async function sourceSnapshot(
         bytes += next.value.length;
         if (bytes > 2_000_000) {
           await reader.cancel();
+          reject('page_too_large');
           return null;
         }
         parts.push(next.value);
       }
       const html = Buffer.concat(parts).toString('utf8'),
         published_at = publishedDate(html);
-      if (!published_at) return null;
+      if (!published_at) {
+        reject('missing_publication_date');
+        return null;
+      }
       const text = html
         .replace(/<script\b[^>]*>[\s\S]*?<\/script>/gi, ' ')
         .replace(/<style\b[^>]*>[\s\S]*?<\/style>/gi, ' ')
@@ -110,7 +125,9 @@ async function sourceSnapshot(
         .slice(0, 24000);
       return { url: canonicalUrl(url), published_at, text };
     }
+    reject('too_many_redirects');
   } catch {
+    reject('fetch_failed');
     /* A source failing to load is excluded, never substituted with invented evidence. */
   }
   return null;
@@ -197,9 +214,12 @@ export class OpenAiProvider {
       'responses',
       {
         model: this.c.OPENAI_SEARCH_MODEL,
-        instructions: await this.prompt('news-search'),
-        input: `Find 5-15 AI/developer/technology news articles published between ${new Date(now.getTime() - hours * 3600000).toISOString()} and ${now.toISOString()}. Also find one sourced developer tool if useful. Give clickable article URLs, not homepages.`,
+        instructions:
+          (await this.prompt('news-search')) +
+          '\nUse several short search queries covering AI models, developer tools, and technology launches, varying publishers. Do not use the entire user request as one search query. Open individual articles, not listing pages. Return only findings actually supported by search, and explicitly report if no matching articles are found.',
+        input: `What are the hottest AI, developer tools and technology news stories from ${new Date(now.getTime() - hours * 3600000).toISOString().slice(0, 10)} through ${now.toISOString().slice(0, 10)}? Find 5-15 distinct articles with original article URLs and actual publication dates.`,
         tools: [{ type: 'web_search', filters: { allowed_domains: allowed } }],
+        tool_choice: 'required',
         include: ['web_search_call.action.sources'],
         max_output_tokens: 6000,
       },
@@ -212,9 +232,51 @@ export class OpenAiProvider {
         for (const cite of content.annotations || [])
           if (cite.type === 'url_citation') urls.add(cite.url);
     }
+    const diagnosticDir = join(this.c.STORAGE_ROOT, 'diagnostics', w.runId, `rev-${w.revision}`);
+    await mkdir(diagnosticDir, { recursive: true });
+    const diagnostic: any = {
+      hours,
+      now: now.toISOString(),
+      output_types: (r.output || []).map((o: any) => o.type),
+      search_calls: (r.output || []).filter((o: any) => o.type === 'web_search_call'),
+      response_text: this.outputText(r),
+      cited_urls: [...urls],
+      sources: [],
+    };
+    const saveDiagnostic = () =>
+      writeFile(
+        join(diagnosticDir, `discovery-${hours}h.json`),
+        JSON.stringify(diagnostic, null, 2),
+      );
+    if (!(r.output || []).some((o: any) => o.type === 'web_search_call')) {
+      await saveDiagnostic();
+      throw new PermanentError(
+        'OpenAI returned no web_search_call despite required search; inspect discovery diagnostics',
+      );
+    }
     const snapshots: { url: string; published_at: string; text: string }[] = [];
     for (const url of [...urls].slice(0, 25)) {
-      const s = await sourceSnapshot(url);
+      let rejection: string | undefined;
+      const s = await sourceSnapshot(url, (reason) => {
+        rejection = reason;
+      });
+      diagnostic.sources.push({
+        url,
+        fetched: Boolean(s),
+        published_at: s?.published_at,
+        rejection:
+          rejection ||
+          (s && Date.parse(s.published_at) > now.getTime()
+            ? 'future_date'
+            : s && Date.parse(s.published_at) < now.getTime() - hours * 3600000
+              ? 'outside_window'
+              : undefined),
+        in_window: Boolean(
+          s &&
+          Date.parse(s.published_at) <= now.getTime() &&
+          Date.parse(s.published_at) >= now.getTime() - hours * 3600000,
+        ),
+      });
       if (
         s &&
         Date.parse(s.published_at) <= now.getTime() &&
@@ -222,12 +284,14 @@ export class OpenAiProvider {
       )
         snapshots.push(s);
     }
+    diagnostic.accepted_sources = snapshots.length;
+    await saveDiagnostic();
     if (!snapshots.length) return [];
     const parsed = await this.structured(w, 'news-extract', newsListSchema, {
       now: now.toISOString(),
       sources: snapshots,
     });
-    return parsed.items.flatMap((n) => {
+    const items = parsed.items.flatMap((n) => {
       const source = snapshots.find((s) => s.url === canonicalUrl(n.url));
       if (!source || !normalize(source.text).includes(normalize(n.evidence))) return [];
       return [
@@ -242,6 +306,10 @@ export class OpenAiProvider {
         },
       ];
     });
+    diagnostic.extracted_items = parsed.items.length;
+    diagnostic.verified_items = items.length;
+    await saveDiagnostic();
+    return items;
   }
   async rank(w: Work, items: News[]): Promise<News[]> {
     if (this.c.MOCK_OPENAI) return items;
@@ -280,6 +348,15 @@ export class OpenAiProvider {
       !script.segments.every((s) => news.some((n) => n.id === s.news_id))
     )
       throw new Error('Script news IDs mismatch');
+    for (const segment of script.segments) {
+      const item = news.find((n) => n.id === segment.news_id)!;
+      if (item.older_than_24h) {
+        const [year, month, day] = item.published_at.slice(0, 10).split('-');
+        const date = `${day}/${month}/${year}`;
+        if (!segment.narration.includes(date))
+          segment.narration = `Theo thông tin công bố ngày ${date}, ${segment.narration}`;
+      }
+    }
     const full = [
       script.hook,
       ...script.segments.map((s) => s.narration),
@@ -314,7 +391,7 @@ export class OpenAiProvider {
           tags: ['AI', 'Tech'],
         }
       : await this.structured(w, 'metadata', metadataSchema, { news });
-    const suffix = `\n\nNguồn:\n${news.map((n) => `${n.title}: ${n.url}`).join('\n')}\n\nGiọng đọc và hình minh họa được tạo bằng AI.\n${output.hashtags.join(' ')}`;
+    const suffix = `\n\nNguồn:\n${news.map((n) => `${n.title} (ngày nguồn ${n.published_at.slice(0, 10)}): ${n.url}`).join('\n')}\n\nGiọng đọc và hình minh họa được tạo bằng AI.\n${output.hashtags.join(' ')}`;
     return metadataSchema.parse({ ...output, description: output.description + suffix });
   }
   async voice(w: Work, dir: string, board: Storyboard): Promise<VoiceOutput> {

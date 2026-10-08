@@ -7,6 +7,7 @@ import { setup } from './helpers';
 import { YoutubeProvider } from '../src/providers/youtube';
 import { OpenAiProvider } from '../src/providers/openai';
 import { metadataSchema, UploadUncertainError } from '../src/domain';
+import { mockNews, mockScript } from '../src/mock';
 
 const metadata = metadataSchema.parse({
   title: 'Test',
@@ -169,6 +170,7 @@ test('OpenAI discovery only accepts cited source snapshots with real publication
     const body = JSON.parse(init.body);
     if (requestCount === 1) {
       assert.equal(body.tools[0].type, 'web_search');
+      assert.equal(body.tool_choice, 'required');
       return json({
         status: 'completed',
         usage: { input_tokens: 10, output_tokens: 20 },
@@ -191,6 +193,54 @@ test('OpenAI discovery only accepts cited source snapshots with real publication
     assert.equal((await repo.detail(run.id)).costs.length, 2);
   } finally {
     globalThis.fetch = savedFetch;
+    await pool.end();
+  }
+});
+
+test('Discovery rejects a text answer without an actual web search call', async () => {
+  const { repo, pool, c } = await setup();
+  c.MOCK_OPENAI = false;
+  c.OPENAI_API_KEY = 'test-key';
+  const run = await repo.create('2026-10-08', false);
+  const savedFetch = globalThis.fetch;
+  globalThis.fetch = async () =>
+    json({
+      status: 'completed',
+      output: [{ type: 'message', content: [{ type: 'output_text', text: 'No recent news.' }] }],
+      usage: { input_tokens: 10, output_tokens: 5 },
+    });
+  try {
+    await assert.rejects(
+      new OpenAiProvider(c, repo, {} as any).discover(
+        { runId: run.id, revision: 1, step: 'discover' },
+        new Date('2026-10-08T06:00:00Z'),
+        24,
+      ),
+      /no web_search_call/,
+    );
+  } finally {
+    globalThis.fetch = savedFetch;
+    await pool.end();
+  }
+});
+
+test('Live narration preserves the source date for older news', async () => {
+  const { repo, pool, c } = await setup();
+  c.MOCK_OPENAI = false;
+  const news = mockNews(new Date('2026-10-01T14:00:00Z')).slice(0, 3);
+  for (const item of news) {
+    item.published_at = '2026-10-01T14:00:00Z';
+    item.older_than_24h = true;
+  }
+  const provider = new OpenAiProvider(c, repo, {} as any);
+  (provider as any).structured = async () => mockScript(news);
+  try {
+    const output = await provider.script({ runId: 'test', revision: 1, step: 'script' }, news);
+    for (const segment of output.segments) {
+      assert.ok(segment.narration.includes('01/10/2026'));
+      assert.ok(output.full_script.includes(segment.narration));
+    }
+  } finally {
     await pool.end();
   }
 });
