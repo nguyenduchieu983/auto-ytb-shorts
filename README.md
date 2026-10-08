@@ -50,6 +50,36 @@ npm.cmd run worker
 
 Queue được tách namespace qua `QUEUE_PREFIX=ai-tech-shorts`, tránh trộn job với các app khác trên cùng Redis.
 
+### Tự chạy khi đăng nhập Windows
+
+Sau khi setup/build và chạy `doctor` thành công, đăng ký Task Scheduler cho tài khoản
+Windows sở hữu distro WSL (chọn đúng tên từ `wsl --list --quiet`):
+
+```powershell
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/windows-autostart.ps1 -Action Install -RedisDistro Ubuntu
+# Chạy ngay; lần sau tự chạy sau đăng nhập 30 giây:
+Start-ScheduledTask -TaskName AutoYtbShorts-Logon
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/windows-autostart.ps1 -Action Status
+# Gỡ tự khởi động, giữ nguyên process đang chạy:
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/windows-autostart.ps1 -Action Remove
+```
+
+PostgreSQL native cần có Startup type Automatic trong Windows Services. Tác vụ chạy
+với quyền thường, không lưu mật khẩu Windows; không cần mở Codex hay terminal.
+Redis helper cập nhật IP WSL trước khi khởi động API/worker; tiến trình đang chạy
+được tái sử dụng để tránh Telegram polling trùng. Nếu process đang có nhưng Redis
+đã đổi IP, dừng API/worker có kiểm soát rồi chạy lại tác vụ. Không tự kill worker
+đang sản xuất video. Script chờ dependency và kiểm tra API health + heartbeat worker;
+Task Scheduler thử lại tối đa 3 lần khi startup thất bại. Đây là tác vụ khởi động,
+không phải dịch vụ giám sát crash liên tục sau khi đã ready.
+
+Log khởi động: `storage/runtime/startup.log`; logs API/worker hiện trong dashboard
+Hệ thống. Logs process cũ được giữ trong `storage/runtime/archive` trước lần bật mới.
+Tác vụ dùng Node path lúc cài; sau khi đổi bản Node hoặc chuyển folder, build rồi
+đăng ký lại. Giữ `.env` hiện có, không tự bật scheduler/auto-publish hoặc đổi provider.
+App chạy khi đã đăng nhập; máy tắt/ngủ sẽ không nhận lệnh Telegram. Mở dashboard
+tại `http://127.0.0.1:3000/dashboard` khi cần quản lý.
+
 API mặc định bind `127.0.0.1:3000` qua `HOST`; cần truy cập từ máy khác thì cấu hình bind/reverse proxy. PostgreSQL và Redis nên chỉ nhận kết nối từ app. Nếu triển khai webhook Telegram từ internet, đặt API sau reverse proxy HTTPS và chỉ expose đường dẫn webhook cần thiết. Production chạy API và worker thành hai process/service riêng; khi restart, worker phục hồi job từ DB/Redis.
 
 ## Trigger và duyệt
