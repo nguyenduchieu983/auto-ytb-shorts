@@ -236,7 +236,6 @@ export class YoutubeProvider {
     const channels: any = await channelResponse.json();
     if (!channels.items?.some((c: any) => c.id === video.snippet.channelId))
       throw new PermanentError('Video belongs to a different channel');
-    await this.repo.saveUpload(w, 'UPLOADED', null, videoId, video);
     return {
       video_id: videoId,
       url: `https://www.youtube.com/watch?v=${videoId}`,

@@ -427,6 +427,13 @@ export class Repository {
         ])
       ).rows[0];
       if (!row || row.status !== 'FAILED') throw new PermanentError('Requested step is not failed');
+      // Parallel work may have finished after the run stopped; its output was
+      // rejected while its BullMQ job completed. Invalidate those leases and
+      // redeliver the work so a retry cannot leave a branch stranded.
+      await c.query(
+        "UPDATE pipeline_steps SET status='QUEUED',lease_token=NULL,lease_until=NULL WHERE run_id=$1 AND revision=$2 AND status='RUNNING'",
+        [id, revision],
+      );
       await c.query(
         "UPDATE pipeline_steps SET status='QUEUED',attempts=0,lease_token=NULL,lease_until=NULL,error_message=NULL WHERE run_id=$1 AND revision=$2 AND step=$3",
         [id, revision, step],

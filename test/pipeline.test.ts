@@ -2,6 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { setup } from './helpers';
 import { Work } from '../src/domain';
+import { Pipeline } from '../src/engine';
 
 async function succeed(repo: any, w: Work, output: any, status?: string) {
   const claim = await repo.claim(w);
@@ -191,6 +192,79 @@ test('Approval older than 24 hours requires content revision', async () => {
       new Date(Date.now() - 25 * 3600000),
     ]);
     await assert.rejects(repo.publish(run.id, 1, 'admin'), /expired/);
+  } finally {
+    await pool.end();
+  }
+});
+
+test('Retry recovers parallel work whose late completion was discarded', async () => {
+  const { repo, pool } = await setup();
+  try {
+    const run = await repo.create('2026-10-08', true);
+    for (const step of ['discover', 'rank', 'script', 'verify', 'storyboard'] as const)
+      await succeed(
+        repo,
+        { runId: run.id, revision: 1, step },
+        step === 'rank' ? { selected: [] } : {},
+      );
+    const voice = { runId: run.id, revision: 1, step: 'voice' as const };
+    const visuals = { ...voice, step: 'visuals' as const };
+    const first = await repo.claim(voice);
+    const sibling = await repo.claim(visuals);
+    assert.ok(first && sibling);
+    for (const event of await repo.outbox()) await repo.delivered(event.id);
+    await repo.fail(voice, first.token, 'voice failed', 'FAILED');
+    await repo.finish(visuals, sibling.token, {}, { path: 'late', checksum: 'late' });
+    await repo.retry(run.id, 1, 'voice');
+    await assert.rejects(repo.assertCurrent(visuals, sibling.token), /Run changed/);
+    assert.ok((await repo.outbox()).some((event) => event.step === 'visuals'));
+    await succeed(repo, visuals, {});
+    await succeed(repo, voice, {});
+    await succeed(repo, { ...voice, step: 'subtitles' }, {});
+    assert.equal((await repo.steps(run.id, 1)).find((s) => s.step === 'render')?.status, 'QUEUED');
+  } finally {
+    await pool.end();
+  }
+});
+
+test('Reconciliation rejects failures before upload and commits verified upload state', async () => {
+  const { repo, pool, c } = await setup();
+  try {
+    const run = await repo.create('2026-10-08', true);
+    const p = new Pipeline(c, repo);
+    let calls = 0;
+    p.youtube.reconcile = async () => {
+      calls++;
+      return {
+        video_id: 'abcdefghijk',
+        url: 'https://www.youtube.com/watch?v=abcdefghijk',
+        privacy: 'private',
+        mock: false,
+      };
+    };
+    const discover = { runId: run.id, revision: 1, step: 'discover' as const };
+    const failed = await repo.claim(discover);
+    assert.ok(failed);
+    await repo.fail(discover, failed.token, 'discovery failed', 'FAILED');
+    await assert.rejects(p.reconcile(run.id, 1, 'abcdefghijk'), /not awaiting upload/);
+    assert.equal(calls, 0);
+    await repo.retry(run.id, 1, 'discover');
+    await ready(repo, run.id);
+    await repo.publish(run.id, 1, 'admin');
+    const upload = { ...discover, step: 'upload' as const };
+    const claim = await repo.claim(upload);
+    assert.ok(claim);
+    await repo.saveUpload(upload, 'INITIATING', null);
+    await repo.fail(upload, claim.token, 'unknown initiation', 'UPLOAD_UNCERTAIN');
+    await p.reconcile(run.id, 1, 'abcdefghijk');
+    assert.equal((await repo.get(run.id)).status, 'UPLOADED_PRIVATE');
+    assert.equal((await repo.upload(upload)).youtube_video_id, 'abcdefghijk');
+    assert.equal(
+      (await repo.steps(run.id, 1)).find((s) => s.step === 'upload')?.status,
+      'SUCCEEDED',
+    );
+    await assert.rejects(p.reconcile(run.id, 1, 'abcdefghijk'), /not awaiting upload/);
+    assert.equal(calls, 1);
   } finally {
     await pool.end();
   }

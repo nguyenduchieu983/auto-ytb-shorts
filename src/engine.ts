@@ -253,18 +253,41 @@ export class Pipeline {
     return this.repo.regenerate(id, revision, target);
   }
   async reconcile(id: string, revision: number, videoId: string) {
-    const run = await this.repo.get(id);
-    if (run.revision !== revision || !['UPLOAD_UNCERTAIN', 'FAILED'].includes(run.status))
-      throw new PermanentError('Run is not awaiting upload reconciliation');
-    const result = await this.youtube.reconcile({ runId: id, revision, step: 'upload' }, videoId);
-    await this.repo.pool.query(
-      'UPDATE pipeline_steps SET status=$4,output=$5,lease_token=NULL,finished_at=now() WHERE run_id=$1 AND revision=$2 AND step=$3',
-      [id, revision, 'upload', 'SUCCEEDED', JSON.stringify(result)],
-    );
-    await this.repo.pool.query(
-      'UPDATE daily_runs SET status=$2,error_message=NULL,updated_at=now() WHERE id=$1',
-      [id, result.privacy === 'public' ? 'PUBLISHED' : 'UPLOADED_PRIVATE'],
-    );
-    return result;
+    return this.repo.tx(async (client) => {
+      // Serialize reconciliation with retry/regenerate and commit all upload
+      // state together after ownership verification.
+      const run = (await client.query('SELECT * FROM daily_runs WHERE id=$1 FOR UPDATE', [id]))
+        .rows[0];
+      const upload = (
+        await client.query(
+          "SELECT status FROM pipeline_steps WHERE run_id=$1 AND revision=$2 AND step='upload'",
+          [id, revision],
+        )
+      ).rows[0];
+      const attempt = await this.repo.upload({ runId: id, revision, step: 'upload' });
+      if (
+        !run ||
+        run.revision !== revision ||
+        !['UPLOAD_UNCERTAIN', 'FAILED'].includes(run.status) ||
+        upload?.status !== 'FAILED' ||
+        !attempt ||
+        attempt.status === 'REJECTED'
+      )
+        throw new PermanentError('Run is not awaiting upload reconciliation');
+      const result = await this.youtube.reconcile({ runId: id, revision, step: 'upload' }, videoId);
+      await client.query(
+        "UPDATE upload_attempts SET status='UPLOADED',youtube_video_id=$3,response=$4,updated_at=now() WHERE run_id=$1 AND revision=$2",
+        [id, revision, videoId, JSON.stringify({ status: { privacyStatus: result.privacy } })],
+      );
+      await client.query(
+        'UPDATE pipeline_steps SET status=$4,output=$5,lease_token=NULL,finished_at=now() WHERE run_id=$1 AND revision=$2 AND step=$3',
+        [id, revision, 'upload', 'SUCCEEDED', JSON.stringify(result)],
+      );
+      await client.query(
+        'UPDATE daily_runs SET status=$2,error_message=NULL,updated_at=now() WHERE id=$1',
+        [id, result.privacy === 'public' ? 'PUBLISHED' : 'UPLOADED_PRIVATE'],
+      );
+      return result;
+    });
   }
 }
