@@ -77,7 +77,9 @@ export const newsSchema = z.object({
   source: z.string().min(1),
   url: z.string().url(),
   canonical_url: z.string().url(),
-  published_at: z.string().datetime(),
+  published_at: z.string().datetime().nullable(),
+  freshness_hours: z.number().nullable().optional(),
+  date_parse_failed: z.boolean().optional(),
   event_date: z.string().nullable(),
   summary: z.string().min(10),
   evidence: z.string().min(20),
@@ -102,7 +104,8 @@ export const scriptSchema = z.object({
         key_takeaway: z.string(),
       }),
     )
-    .length(3),
+    .min(1)
+    .max(3),
   takeaway: z.string(),
   cta: z.string(),
   full_script: z.string().min(100),
@@ -184,7 +187,12 @@ export function sourceQuality(n: News): number {
   )
     return 10;
   if (/(^|\.)(reuters\.com|apnews\.com)$/.test(host)) return 9;
-  if (/(^|\.)(techcrunch\.com|theverge\.com)$/.test(host)) return 7;
+  if (
+    /(^|\.)(techcrunch\.com|theverge\.com|venturebeat\.com|arstechnica\.com|thenewstack\.io|bleepingcomputer\.com)$/.test(
+      host,
+    )
+  )
+    return 7;
   return 4;
 }
 export function dedupNews(items: News[], previous: News[] = []): News[] {

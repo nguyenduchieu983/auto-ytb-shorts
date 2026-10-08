@@ -84,9 +84,19 @@ Endpoints:
 
 Trong `.env`, đặt `OPENAI_API_KEY`, `MOCK_OPENAI=false`, chọn các model qua `OPENAI_*_MODEL`. Model defaults là cấu hình khởi điểm; cần kiểm tra quyền truy cập model của project trước khi dùng.
 
-Web Search chạy trên Responses API; lấy URL từ citation/source annotations rồi đọc bài nguồn, chỉ chấp nhận HTTPS trên allowlist. Thời gian đăng lấy từ `datePublished` hoặc metadata publication, không lấy `dateModified`. Trang không lấy được ngày hoặc nội dung sẽ bị loại. Structured outputs có JSON schema và được kiểm tra lại bằng Zod. Fact verification dùng đoạn bằng chứng; không phải bảo đảm tuyệt đối về độ đúng của tin.
+NEWS DISCOVERY dùng Responses API với Web Search live bắt buộc và context high. Request search trả raw answer/source list; request riêng trích xuất JSON từ raw answer và bài nguồn đã tải. Nguồn ưu tiên chỉ cộng điểm, không chặn publisher khác. URL nội bộ/không hợp lệ, trang listing và nguồn không truy cập được được loại với lý do cụ thể. Bằng chứng lấy trực tiếp từ nội dung bài, không đối chiếu chuỗi quotation do AI tự viết.
 
-Web Search bắt buộc thực hiện tìm kiếm; nếu API không trả `web_search_call`, run báo lỗi rõ thay vì coi là thiếu tin. Log trong `storage/diagnostics/<runId>/rev-<revision>/discovery-<hours>h.json` ghi nguồn, ngày công bố và lý do loại. Mặc định tìm trong 24 giờ rồi mở rộng tối đa 48 giờ. Có thể đặt `MAX_NEWS_AGE_HOURS=168` trong `.env` để thử bản tin tổng hợp 7 ngày; tin quá 24 giờ luôn đọc rõ ngày nguồn và description ghi ngày từng bài. Restart API/worker sau khi đổi cấu hình; regenerate từ `discover` để tìm lại nguồn.
+Tự mở 24 → 48 → 72 giờ nếu dưới 5 tin; sau đó bổ sung RSS/Atom của OpenAI, Anthropic, Google AI, GitHub, Microsoft, NVIDIA, TechCrunch và The Verge. Feed không tồn tại/lỗi được ghi log và bỏ qua. Ngày thiếu hoặc không parse được giữ null với date_parse_failed=true và freshness_hours=null; không giả làm tin mới. Tin cũ được ghi ngày nguồn. MAX_NEWS_AGE_HOURS đã được thay bằng flow cố định 24/48/72 theo yêu cầu.
+
+NewsDiscoveryService ghi raw response, source snapshots, extraction, lý do loại và counts vào storage/diagnostics/<runId>/rev-<revision>/discovery-<timestamp>/. API search/extraction lỗi có mã rõ; chỉ khi không còn tin hợp lệ mới SKIPPED. Chọn tối đa 3 tin; ưu tiên đa dạng và 2 news + 1 tool. Nếu chỉ có 1–2 tin hợp lệ, giữ số tin thực có và chờ duyệt thủ công; không tự tạo tin thứ ba. Auto-publish vẫn yêu cầu 3 tin có ngày nguồn.
+
+Chạy acceptance live riêng discovery/rank, không tạo video hay gửi Telegram/YouTube:
+
+```powershell
+npm.cmd run news:discover
+```
+
+Lệnh in RAW SOURCES, EXTRACTED, AFTER DATE FILTER, AFTER DEDUP, AFTER SOURCE FILTER, FINAL SELECTED và top 3. Report + ledger reservation/usage lưu trong storage/discovery-live/latest.json. [Điều tra root cause](docs/news-discovery.md).
 
 Prompt nằm trong `prompts/*.md` với version đầu file. Tin thiếu thì mở rộng 48h; chọn 3 tin hoặc 2 tin + 1 tool có nguồn. Không đủ thì skip. Tin đã dùng trong run đã upload sẽ bị dedup ở các ngày sau.
 

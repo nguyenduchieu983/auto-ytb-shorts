@@ -7,7 +7,6 @@ import {
   PermanentError,
   ReviewError,
   SkipError,
-  sourceQuality,
   StaleWorkError,
   Step,
   UploadUncertainError,
@@ -17,7 +16,6 @@ import { Media } from './media';
 import { OpenAiProvider } from './providers/openai';
 import { TelegramProvider } from './providers/telegram';
 import { YoutubeProvider } from './providers/youtube';
-import { selectNews } from './domain';
 import { Storage } from './storage';
 
 export function safeError(error: unknown, c: Config): string {
@@ -67,28 +65,22 @@ export class Pipeline {
       switch (w.step) {
         case 'discover': {
           const now = new Date();
-          let items = await this.ai.discover(w, now, 24);
-          if (items.length < 5 && this.c.MAX_NEWS_AGE_HOURS > 24)
-            items = dedupNews([
-              ...items,
-              ...(await this.ai.discover(w, now, Math.min(48, this.c.MAX_NEWS_AGE_HOURS))),
-            ]);
-          if (items.length < 5 && this.c.MAX_NEWS_AGE_HOURS > 48)
-            items = dedupNews([
-              ...items,
-              ...(await this.ai.discover(w, now, this.c.MAX_NEWS_AGE_HOURS)),
-            ]);
-          result = { items, discovered_at: now.toISOString() };
+          const discovered = this.c.MOCK_OPENAI
+            ? { items: await this.ai.discover(w, now, 24) }
+            : await this.ai.newsDiscovery().discover(w, now, await this.repo.previousNews(w.runId));
+          result = { ...discovered, discovered_at: now.toISOString() };
           break;
         }
         case 'rank': {
           const items = dedupNews(o.discover.items, await this.repo.previousNews(w.runId));
-          const ranked = await this.ai.rank(w, items);
-          const scored = ranked.map((n) => ({
-            ...n,
-            score: this.c.MOCK_OPENAI ? n.score : Math.min(100, n.score + sourceQuality(n)),
-          }));
-          result = { items: scored, selected: selectNews(scored) };
+          const discovery = this.ai.newsDiscovery();
+          if (o.discover.diagnostics) discovery.counts = { ...o.discover.diagnostics };
+          const scored = this.c.MOCK_OPENAI ? items : await discovery.rank(w, items);
+          result = {
+            items: scored,
+            selected: discovery.selectTopNews(scored),
+            diagnostics: discovery.counts,
+          };
           break;
         }
         case 'script':
@@ -142,9 +134,9 @@ export class Pipeline {
           const checks = {
             ...technical.checks,
             verified: o.verify.verified === true,
-            news_count: news.length === 3,
-            sources: news.every((n) => n.url && n.evidence && n.published_at),
-            unique_sources: dedupNews(news).length === 3,
+            news_count: news.length >= 1 && news.length <= 3,
+            sources: news.every((n) => n.url && n.evidence),
+            unique_sources: dedupNews(news).length === news.length,
             visual_coverage:
               o.visuals.images.length >= 4 &&
               o.voice.timings.every((t: any) =>
@@ -164,7 +156,12 @@ export class Pipeline {
             hard_pass,
             score,
             auto_eligible:
-              hard_pass && score >= 85 && technical.duration_class === 'pass' && !claim.run.mock,
+              hard_pass &&
+              score >= 85 &&
+              technical.duration_class === 'pass' &&
+              !claim.run.mock &&
+              news.length === 3 &&
+              news.every((n) => n.published_at !== null),
           };
           if (!hard_pass) {
             await this.storage.json(dir, 'qc-failed.json', result);

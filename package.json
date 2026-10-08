@@ -22,14 +22,17 @@
     "test": "tsx --test test/*.test.ts",
     "check": "npm run build && npm test",
     "format": "prettier --write src scripts test package.json tsconfig.json README.md",
-    "oauth": "tsx scripts/oauth.ts"
+    "oauth": "tsx scripts/oauth.ts",
+    "news:discover": "tsx scripts/news-discovery.ts"
   },
   "dependencies": {
     "@nestjs/common": "^11.1.0",
     "@nestjs/core": "^11.1.0",
     "@nestjs/platform-express": "^11.1.0",
     "bullmq": "^5.61.0",
+    "cheerio": "^1.2.0",
     "dotenv": "^16.6.0",
+    "fast-xml-parser": "^5.11.2",
     "ioredis": "^5.7.0",
     "pg": "^8.16.0",
     "reflect-metadata": "^0.2.2",

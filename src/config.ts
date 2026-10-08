@@ -28,7 +28,6 @@ const schema = z.object({
   OPENAI_IMAGE_MODEL: z.string().default('gpt-image-1'),
   OPENAI_TTS_MODEL: z.string().default('gpt-4o-mini-tts'),
   OPENAI_TTS_VOICE: z.string().default('coral'),
-  MAX_NEWS_AGE_HOURS: z.coerce.number().int().min(24).max(168).default(48),
   MAX_RUN_COST_USD: z.coerce.number().nonnegative().default(5),
   TEXT_CALL_RESERVE_USD: z.coerce.number().positive().default(0.1),
   SEARCH_CALL_RESERVE_USD: z.coerce.number().positive().default(0.5),

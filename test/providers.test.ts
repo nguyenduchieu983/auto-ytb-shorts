@@ -172,6 +172,11 @@ test('OpenAI discovery only accepts cited source snapshots with real publication
     if (requestCount === 1) {
       assert.equal(body.tools[0].type, 'web_search');
       assert.equal(body.tool_choice, 'required');
+      assert.equal(body.tools[0].search_context_size, 'high');
+      assert.equal(body.tools[0].external_web_access, true);
+      assert.equal(body.tools[0].filters, undefined);
+      assert.equal(body.text, undefined);
+      assert.deepEqual(body.include, ['web_search_call.action.sources']);
       return json({
         status: 'completed',
         usage: { input_tokens: 10, output_tokens: 20 },
@@ -181,10 +186,6 @@ test('OpenAI discovery only accepts cited source snapshots with real publication
     assert.equal(body.text.format.type, 'json_schema');
     assert.equal(body.text.format.schema.properties.items.items.properties.url.type, 'string');
     assert.equal(body.text.format.schema.properties.items.items.properties.url.format, undefined);
-    assert.equal(
-      body.text.format.schema.properties.items.items.properties.canonical_url.format,
-      undefined,
-    );
     return json({
       status: 'completed',
       output: [{ content: [{ type: 'output_text', text: JSON.stringify({ items: [item] }) }] }],
@@ -192,7 +193,16 @@ test('OpenAI discovery only accepts cited source snapshots with real publication
     });
   };
   try {
-    const items = await new OpenAiProvider(c, repo, {} as any).discover(w, now, 24);
+    const items = await new OpenAiProvider(c, repo, {} as any).discover(
+      w,
+      now,
+      24,
+      async (url) => ({
+        url,
+        body: '<script type="application/ld+json">{"datePublished":"2026-10-08T05:00:00Z"}</script><article>A new test feature is announced for developers.</article>',
+        contentType: 'text/html',
+      }),
+    );
     assert.equal(items.length, 1);
     assert.equal(items[0].published_at, '2026-10-08T05:00:00.000Z');
     assert.notEqual(items[0].id, 'temporary');
