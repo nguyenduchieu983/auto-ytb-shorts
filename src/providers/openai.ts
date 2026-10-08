@@ -42,6 +42,13 @@ const allowed = [
   'techcrunch.com',
   'theverge.com',
 ];
+function removeUriFormats(schema: any): void {
+  if (!schema || typeof schema !== 'object') return;
+  // OpenAI strict outputs reject JSON Schema's URI format. Zod still validates
+  // URLs locally after the response; other supported constraints are preserved.
+  if (schema.format === 'uri') delete schema.format;
+  for (const value of Object.values(schema)) removeUriFormats(value);
+}
 export function sourceAllowed(raw: string): boolean {
   try {
     const u = new URL(raw);
@@ -153,10 +160,48 @@ export class OpenAiProvider {
       signal: AbortSignal.timeout(180000),
     });
     if (!r.ok) {
-      await r.text();
-      if ([400, 401, 403, 404].includes(r.status))
-        throw new PermanentError(`OpenAI ${endpoint} HTTP ${r.status}`);
-      throw new Error(`OpenAI ${endpoint} HTTP ${r.status}`);
+      const raw = await r.text();
+      let details: any;
+      try {
+        details = JSON.parse(raw).error;
+      } catch {
+        /* Non-JSON upstream errors retain HTTP status. */
+      }
+      const redact = (value: unknown): string => {
+        let text = typeof value === 'string' ? value : '';
+        for (const secret of [
+          this.c.OPENAI_API_KEY,
+          this.c.GOOGLE_CLIENT_SECRET,
+          this.c.YOUTUBE_REFRESH_TOKEN,
+          this.c.TELEGRAM_BOT_TOKEN,
+          this.c.ADMIN_TOKEN,
+          this.c.TELEGRAM_WEBHOOK_SECRET,
+        ])
+          if (secret) text = text.split(secret).join('[redacted]');
+        return text.replace(/Bearer\s+\S+/gi, 'Bearer [redacted]').slice(0, 1000);
+      };
+      const diagnostic = {
+        status: r.status,
+        endpoint,
+        model: body.model,
+        request_id: r.headers.get('x-request-id'),
+        type: redact(details?.type),
+        code: redact(details?.code),
+        param: redact(details?.param),
+        message: redact(details?.message),
+      };
+      const dir = join(this.c.STORAGE_ROOT, 'diagnostics', w.runId, `rev-${w.revision}`);
+      await mkdir(dir, { recursive: true });
+      await writeFile(
+        join(dir, `api-error-${Date.now()}.json`),
+        JSON.stringify(diagnostic, null, 2),
+      );
+      const message =
+        `OpenAI ${endpoint} HTTP ${r.status}` +
+        (diagnostic.message ? `: ${diagnostic.message}` : '') +
+        (diagnostic.param ? ` (param: ${diagnostic.param})` : '');
+      if ([400, 401, 403, 404].includes(r.status)) throw new PermanentError(message);
+      throw new Error(message);
     }
     if (endpoint === 'audio/speech') return Buffer.from(await r.arrayBuffer());
     const value: any = await r.json();
@@ -182,6 +227,7 @@ export class OpenAiProvider {
     const convert = zodToJsonSchema as unknown as (value: z.ZodTypeAny, options: any) => any;
     const jsonSchema = convert(schema, { $refStrategy: 'none' });
     delete jsonSchema.$schema;
+    removeUriFormats(jsonSchema);
     const r = await this.request(
       w,
       'responses',

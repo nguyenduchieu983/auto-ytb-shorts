@@ -1,8 +1,9 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdir, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, readdir, writeFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { randomUUID } from 'node:crypto';
+import { z } from 'zod';
 import { setup } from './helpers';
 import { YoutubeProvider } from '../src/providers/youtube';
 import { OpenAiProvider } from '../src/providers/openai';
@@ -178,6 +179,12 @@ test('OpenAI discovery only accepts cited source snapshots with real publication
       });
     }
     assert.equal(body.text.format.type, 'json_schema');
+    assert.equal(body.text.format.schema.properties.items.items.properties.url.type, 'string');
+    assert.equal(body.text.format.schema.properties.items.items.properties.url.format, undefined);
+    assert.equal(
+      body.text.format.schema.properties.items.items.properties.canonical_url.format,
+      undefined,
+    );
     return json({
       status: 'completed',
       output: [{ content: [{ type: 'output_text', text: JSON.stringify({ items: [item] }) }] }],
@@ -241,6 +248,92 @@ test('Live narration preserves the source date for older news', async () => {
       assert.ok(output.full_script.includes(segment.narration));
     }
   } finally {
+    await pool.end();
+  }
+});
+
+test('OpenAI errors preserve actionable details without leaking credentials', async () => {
+  const { repo, pool, c } = await setup();
+  c.MOCK_OPENAI = false;
+  c.OPENAI_API_KEY = 'secret-test-key';
+  const run = await repo.create('2026-10-08', false);
+  const savedFetch = globalThis.fetch;
+  globalThis.fetch = async () =>
+    json(
+      {
+        error: {
+          type: 'invalid_request_error',
+          code: 'unsupported_parameter',
+          param: 'tool_choice',
+          message: 'Unsupported tool_choice; credential secret-test-key',
+        },
+      },
+      400,
+    );
+  try {
+    await assert.rejects(
+      new OpenAiProvider(c, repo, {} as any).discover(
+        { runId: run.id, revision: 1, step: 'discover' },
+        new Date('2026-10-08T06:00:00Z'),
+        24,
+      ),
+      (error: any) => {
+        assert.match(error.message, /HTTP 400.*Unsupported tool_choice/);
+        assert.match(error.message, /param: tool_choice/);
+        assert.ok(!error.message.includes(c.OPENAI_API_KEY));
+        return true;
+      },
+    );
+    const dir = resolve(c.STORAGE_ROOT, 'diagnostics', run.id, 'rev-1');
+    const file = (await readdir(dir)).find((name) => name.startsWith('api-error-'))!;
+    const diagnostic = await readFile(resolve(dir, file), 'utf8');
+    assert.ok(!diagnostic.includes(c.OPENAI_API_KEY));
+    assert.equal(JSON.parse(diagnostic).code, 'unsupported_parameter');
+  } finally {
+    globalThis.fetch = savedFetch;
+    await pool.end();
+  }
+});
+
+test('Strict URI compatibility keeps local URL validation', async () => {
+  const { repo, pool, c } = await setup();
+  c.MOCK_OPENAI = false;
+  c.OPENAI_API_KEY = 'test-key';
+  const run = await repo.create('2026-10-08', false);
+  const schema = z.object({ sources: z.array(z.object({ url: z.string().url() })) });
+  const savedFetch = globalThis.fetch;
+  globalThis.fetch = async (_input: any, init?: any) => {
+    const body = JSON.parse(init.body);
+    const urlSchema = body.text.format.schema.properties.sources.items.properties.url;
+    assert.equal(urlSchema.type, 'string');
+    assert.equal(urlSchema.format, undefined);
+    return json({
+      status: 'completed',
+      usage: {},
+      output: [
+        {
+          content: [
+            {
+              type: 'output_text',
+              text: JSON.stringify({ sources: [{ url: 'not-a-url' }] }),
+            },
+          ],
+        },
+      ],
+    });
+  };
+  try {
+    await assert.rejects(
+      (new OpenAiProvider(c, repo, {} as any) as any).structured(
+        { runId: run.id, revision: 1, step: 'discover' },
+        'news-extract',
+        schema,
+        {},
+      ),
+      /Invalid structured output/,
+    );
+  } finally {
+    globalThis.fetch = savedFetch;
     await pool.end();
   }
 });
