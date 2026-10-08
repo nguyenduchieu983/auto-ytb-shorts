@@ -228,6 +228,11 @@ export class OpenAiProvider {
           counting:
             'Whitespace-separated tokens in hook + segment narrations + takeaway + CTA, including dates',
           previous_word_count: round ? wordCount : undefined,
+          correction: round
+            ? wordCount > maxWords
+              ? `Previous FINAL narration has ${wordCount} whitespace tokens. REMOVE AT LEAST ${wordCount - 130} tokens from spoken fields. Rewrite toward 130 tokens TOTAL including mandatory dates. Delete secondary details and shorten hook/takeaway/CTA. Never repeat a date.`
+              : `Previous FINAL narration has only ${wordCount} whitespace tokens. Add supported context to reach 130 tokens TOTAL.`
+            : undefined,
         },
       });
       if (

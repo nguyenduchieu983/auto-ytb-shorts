@@ -371,6 +371,7 @@ test('Script rewrites oversized narration and counts final fields instead of cla
     assert.deepEqual(input.issues, issues);
     if (calls === 2) {
       assert.equal(input.narration_budget.previous_word_count, 387);
+      assert.match(input.narration_budget.correction, /REMOVE AT LEAST 257 tokens/);
       assert.equal(input.previous.full_script.split(/\s+/).length, 387);
     }
     return {
