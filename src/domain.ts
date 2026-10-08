@@ -122,14 +122,23 @@ export const storyboardSchema = z.object({
       z.object({
         scene_id: z.number().int(),
         narration: z.string().min(1),
-        visual_type: z.enum(['image', 'headline-card', 'logo-card', 'quote-card', 'motion-card']),
+        visual_type: z.enum([
+          'image',
+          'headline-card',
+          'logo-card',
+          'quote-card',
+          'motion-card',
+          'metric-card',
+          'comparison-card',
+        ]),
         visual_prompt: z.string(),
+        visual_labels: z.array(z.string().max(32)).max(3).optional(),
         overlay_text: z.string().max(160),
         source_label: z.string(),
       }),
     )
     .min(4)
-    .max(7),
+    .max(12),
 });
 export type Storyboard = z.infer<typeof storyboardSchema>;
 export const metadataSchema = z.object({

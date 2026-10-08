@@ -1,7 +1,8 @@
 import { spawn } from 'node:child_process';
 import { readFile, writeFile, stat, copyFile } from 'node:fs/promises';
 import { join, basename } from 'node:path';
-import sharp from 'sharp';
+import { editorialCard } from './visual-design';
+import { TimedWord } from './narration';
 import { Config } from './config';
 import { durationClass, PermanentError, Storyboard } from './domain';
 
@@ -41,31 +42,16 @@ function binary(configured: string, packageName: string, fallback: string) {
     return fallback;
   }
 }
-const xml = (s: string) =>
-  s.replace(
-    /[<>&"']/g,
-    (c) => ({ '<': '&lt;', '>': '&gt;', '&': '&amp;', '"': '&quot;', "'": '&apos;' })[c]!,
-  );
-function lines(text: string, size = 28): string[] {
-  const out: string[] = [];
-  let line = '';
-  for (const word of text.split(/\s+/)) {
-    if ((line + ' ' + word).trim().length > size && line) {
-      out.push(line);
-      line = word;
-    } else line = (line + ' ' + word).trim();
-  }
-  if (line) out.push(line);
-  return out.slice(0, 5);
-}
 export interface VoiceOutput {
   path: string;
   duration: number;
   timings: { scene_id: number; start: number; end: number }[];
   mock: boolean;
+  words?: (TimedWord & { scene_id: number })[];
+  alignment_coverage?: number;
 }
 export interface VisualOutput {
-  images: { scene_id: number; path: string; fallback: boolean }[];
+  images: { scene_id: number; path: string; overlay_path?: string; fallback: boolean }[];
 }
 export class Media {
   readonly ffmpeg: string;
@@ -87,18 +73,27 @@ export class Media {
       ]),
     );
   }
-  async card(path: string, headline: string, source: string, mock: boolean, image?: Buffer) {
-    const title = lines(headline);
-    const svg = Buffer.from(
-      `<svg width="1080" height="1920"><rect width="1080" height="1920" fill="${image ? 'none' : '#081326'}"/><rect x="70" y="135" width="940" height="115" rx="25" fill="#101d35"/><text x="100" y="208" font-family="Arial" font-size="42" font-weight="bold" fill="#68e1f7">${xml(this.c.CHANNEL_NAME)}</text><rect x="70" y="390" width="900" height="${title.length * 90 + 120}" rx="30" fill="#0a1224" opacity=".92"/>${title.map((l, i) => `<text x="110" y="${500 + i * 90}" font-family="Arial" font-size="62" font-weight="bold" fill="white">${xml(l)}</text>`).join('')}<rect x="110" y="${550 + title.length * 90}" width="650" height="7" fill="#9b7dff"/><text x="100" y="1190" font-family="Arial" font-size="30" fill="#b5d5e7">${xml(source.slice(0, 52))}</text>${mock ? '<text x="100" y="1270" font-family="Arial" font-size="38" fill="#f8c667">DEMO • DỮ LIỆU VÀ ÂM THANH MẪU</text>' : ''}</svg>`,
+  async card(
+    path: string,
+    headline: string,
+    source: string,
+    mock: boolean,
+    image?: Buffer,
+    type = 'headline-card',
+    index = 1,
+    labels: string[] = [],
+  ) {
+    await editorialCard(
+      path,
+      headline,
+      source,
+      this.c.CHANNEL_NAME,
+      mock,
+      image,
+      type,
+      index,
+      labels,
     );
-    const base = image
-      ? sharp(image).resize(1080, 1920, { fit: 'cover' })
-      : sharp({ create: { width: 1080, height: 1920, channels: 3, background: '#081326' } });
-    await base
-      .composite([{ input: svg }])
-      .png()
-      .toFile(path);
   }
   async mockVoice(path: string, duration: number) {
     const rate = 24000,
@@ -185,19 +180,29 @@ export class Media {
         image = visuals.images.find((v) => v.scene_id === timing.scene_id);
       if (!image) throw new PermanentError('Missing scene visual');
       const length = timing.end - timing.start,
-        frames = Math.ceil(length * 30);
+        frames = Math.round(timing.end * 30) - Math.round(timing.start * 30);
       const name = `scene-${i}.mp4`;
       clips.push(name);
       // Moving crop with bounded zoom. Text and source cards remain within safe margins.
-      const motion = `scale=1200:2134,zoompan=z='1+0.000025*on':x='iw/2-iw/zoom/2':y='ih/2-ih/zoom/2':d=${frames}:s=1080x1920:fps=30,format=yuv420p`;
+      const zoom = i % 2 ? `1.07-0.07*on/${frames}` : `1+0.07*on/${frames}`;
+      const motion = `scale=1440:2560,zoompan=z='${zoom}':x='iw/2-iw/zoom/2':y='ih/2-ih/zoom/2':d=${frames}:s=1080x1920:fps=30,format=yuv420p`;
+      const visualArgs = image.overlay_path
+        ? [
+            '-i',
+            image.overlay_path,
+            '-filter_complex',
+            `[0:v]${motion}[bg];[bg][1:v]overlay=0:0:format=auto,format=yuv420p[v]`,
+            '-map',
+            '[v]',
+          ]
+        : ['-vf', motion];
       await processFile(
         this.ffmpeg,
         [
           '-y',
           '-i',
           image.path,
-          '-vf',
-          motion,
+          ...visualArgs,
           '-frames:v',
           String(frames),
           '-an',
@@ -323,6 +328,19 @@ export function buildAss(board: Storyboard, voice: VoiceOutput): string {
   for (const scene of board.scenes) {
     const timing = voice.timings.find((t) => t.scene_id === scene.scene_id);
     if (!timing) throw new PermanentError('Missing scene audio timing');
+    if (voice.words) {
+      const timed = voice.words.filter((w) => w.scene_id === scene.scene_id);
+      for (let i = 0; i < timed.length; i += 4) {
+        const chunk = timed.slice(i, i + 4);
+        const text = chunk
+          .map((w) => `{\\kf${Math.max(1, Math.round((w.end - w.start) * 100))}}${assText(w.word)}`)
+          .join(' ');
+        events.push(
+          `Dialogue: 0,${assTime(chunk[0].start)},${assTime(chunk[chunk.length - 1].end)},Default,,0,0,0,,${text}`,
+        );
+      }
+      continue;
+    }
     const words = scene.narration.trim().split(/\s+/);
     const chunks: string[][] = [];
     for (let i = 0; i < words.length; i += 6) chunks.push(words.slice(i, i + 6));
@@ -337,5 +355,5 @@ export function buildAss(board: Storyboard, voice: VoiceOutput): string {
       cursor = end;
     }
   }
-  return `[Script Info]\nScriptType: v4.00+\nPlayResX: 1080\nPlayResY: 1920\nWrapStyle: 2\n[V4+ Styles]\nFormat: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding\nStyle: Default,Arial,58,&H00FFFFFF,&H000000FF,&H00101826,&H90000000,-1,0,0,0,100,100,0,0,1,4,1,2,100,150,410,1\n[Events]\nFormat: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text\n${events.join('\n')}\n`;
+  return `[Script Info]\nScriptType: v4.00+\nPlayResX: 1080\nPlayResY: 1920\nWrapStyle: 2\n[V4+ Styles]\nFormat: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding\nStyle: Default,Arial,58,&H00FFFFFF,&H008EEEDD,&H00101826,&H90000000,-1,0,0,0,100,100,0,0,1,4,1,2,85,160,330,1\n[Events]\nFormat: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text\n${events.join('\n')}\n`;
 }

@@ -65,7 +65,7 @@ test('ASS sanitizes override injection and retains Vietnamese with bounded chunk
   const ass = buildAss(board, { path: 'voice.mp3', duration: 48, mock: true, timings });
   assert.match(ass, /Đây/);
   assert.match(ass, /\\N/);
-  assert.match(ass, /410,1/);
+  assert.match(ass, /330,1/);
 });
 test('Live upload rejects mock content at startup', () => {
   assert.throws(

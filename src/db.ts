@@ -395,13 +395,14 @@ export class Repository {
     });
   }
   async previousNews(id: string): Promise<News[]> {
-    return (
-      await this.pool.query(
-        "SELECT n.payload FROM news_items n JOIN daily_runs r ON r.id=n.run_id WHERE n.run_id<>$1 AND r.status IN ('UPLOADED_PRIVATE','PUBLISHED') ORDER BY n.created_at DESC LIMIT 200",
-        [id],
-      )
-    ).rows.map((r) => r.payload);
+    const cutoff = new Date(Date.now() - 90 * 86400000).toISOString().slice(0, 10);
+    const rows = await this.pool.query(
+      "SELECT s.output FROM daily_runs r JOIN pipeline_steps s ON s.run_id=r.id AND s.revision=r.revision AND s.step='rank' WHERE r.id<>$1 AND r.mock=false AND r.run_date >= $2 AND r.status IN ('WAITING_APPROVAL','UPLOADING','UPLOAD_UNCERTAIN','UPLOADED_PRIVATE','PUBLISHED') AND s.status='SUCCEEDED' ORDER BY r.run_date DESC LIMIT 100",
+      [id, cutoff],
+    );
+    return rows.rows.flatMap((r) => r.output?.selected || []);
   }
+
   async retry(id: string, revision: number, step: Step): Promise<Run> {
     return this.tx(async (c) => {
       const run: Run = (await c.query('SELECT * FROM daily_runs WHERE id=$1 FOR UPDATE', [id]))

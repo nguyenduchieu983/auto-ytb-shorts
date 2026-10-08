@@ -23,7 +23,8 @@
     "check": "npm run build && npm test",
     "format": "prettier --write src scripts test package.json tsconfig.json README.md",
     "oauth": "tsx scripts/oauth.ts",
-    "news:discover": "tsx scripts/news-discovery.ts"
+    "news:discover": "tsx scripts/news-discovery.ts",
+    "video:preview": "tsx scripts/quality-preview.ts"
   },
   "dependencies": {
     "@nestjs/common": "^11.1.0",

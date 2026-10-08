@@ -160,3 +160,22 @@ Trước production cần chạy với PostgreSQL/Redis thật, thử concurrent
 Backup database PostgreSQL và thư mục storage; bật persistence Redis và giữ revision đang chờ duyệt/đang upload. V1 không tự xóa assets, không có analytics feedback, UI admin, text-to-video hay đa nền tảng. Scheduler và auto-publish là opt-in. Mốc vận hành 7 ngày/30 ngày trong đặc tả cần theo dõi thực tế sau deployment.
 
 Nguồn kỹ thuật: [OpenAI Web Search](https://developers.openai.com/api/docs/guides/tools-web-search), [Structured Outputs](https://developers.openai.com/api/docs/guides/structured-outputs), [TTS](https://developers.openai.com/api/docs/guides/text-to-speech), [Image API](https://developers.openai.com/api/docs/guides/image-generation), [BullMQ Job IDs](https://docs.bullmq.io/guide/jobs/job-ids), [Job Schedulers](https://docs.bullmq.io/guide/job-schedulers), [YouTube resumable uploads](https://developers.google.com/youtube/v3/guides/using_resumable_upload_protocol), [videos.insert](https://developers.google.com/youtube/v3/docs/videos/insert).
+
+
+## Chất lượng voice, hình và chống trùng sự kiện
+
+Voice live đọc cả bản tin trong **một request** để giữ giọng/cadence nhất quán. `prompts/voice.md` điều khiển nhấn giọng và ngắt nghỉ; không tăng tốc audio để ép thời lượng. Whisper word timestamps được căn với script gốc bằng sequence alignment; các token không khớp được nội suy giữa mốc khớp. Coverage thấp hoặc mất cả cảnh sẽ dừng để duyệt thay vì render sai. Phụ đề dùng các mốc này; bản cũ không có word timestamps vẫn dùng đường tương thích. Có thêm một request transcription/voice (`TRANSCRIPTION_CALL_RESERVE_USD=0.02`, là reservation, không phải hóa đơn).
+
+Storyboard chia lời bằng code thành khoảng 10 nhịp, AI chỉ thiết kế hình cho lời đã khóa: minh họa chủ thể, số liệu có nguồn, diễn giải tác động và kết luận. Typography/source nằm trên lớp cố định; nền có chuyển động nhẹ luân phiên. Hình AI ghi rõ minh họa, không đóng vai ảnh sản phẩm chính thức. `OPENAI_IMAGE_QUALITY=medium` mặc định; thay đổi chất lượng có thể tăng chi phí. Hình lỗi dùng card và ghi fallback. Chất lượng cảm nhận vẫn cần xem/nghe preview; technical QC không đo mức hấp dẫn hay bảo đảm lượt xem.
+
+Chống trùng gồm canonical URL/tiêu đề và kiểm tra **cùng sự kiện** bằng model trước khi rank. Lịch sử 90 ngày lấy đúng `rank.selected` của revision hiện tại ở video đã upload/public hoặc đang chờ duyệt/upload (kể cả upload chưa rõ kết quả); bỏ mock, skipped/failed và chính run đang tạo lại. Khác báo, URL hay cách giật title vẫn bị loại nếu cùng sự kiện. Follow-up chỉ giữ khi có diễn biến mới cụ thể. Quyết định/lý do nằm trong `rank/novelty.json`. Đây là phân loại có thể sai, không cam kết loại trùng tuyệt đối; giữ duyệt thủ công. Ràng buộc một run/ngày và approval/upload idempotency vẫn áp dụng.
+
+Tạo preview cải tiến từ tin đã chọn của một run, **không sửa run, không gửi Telegram, không upload**:
+
+```powershell
+npm.cmd run video:preview -- <runId>
+```
+
+Kết quả/usage/QC nằm ở `storage/quality-preview/<id>/report.json`; MP4 ở `render/final.mp4`. Preview dùng provider theo cấu hình mock/live hiện tại. Khi muốn dùng bản mới trong luồng duyệt chính, regenerate `script` cho run chưa bắt đầu upload; preview riêng không có lệnh publish.
+
+Kiểm chứng bản nâng cấp: build và 54 tests pass; preview live một lượt TTS dài 56,35 giây, word alignment 97,8%, technical QC 1080x1920/30fps/H.264/AAC đạt. Kiểm tra novelty bằng API thật đã loại cùng sự kiện đổi tiêu đề và giữ hai tin khác; không thay thế kiểm chứng độ chính xác của nguồn.

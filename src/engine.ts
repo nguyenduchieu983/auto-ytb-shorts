@@ -72,7 +72,11 @@ export class Pipeline {
           break;
         }
         case 'rank': {
-          const items = dedupNews(o.discover.items, await this.repo.previousNews(w.runId));
+          const history = await this.repo.previousNews(w.runId);
+          const candidates = dedupNews(o.discover.items, history);
+          const novelty = await this.ai.filterRepeatedNews(w, candidates, history);
+          await this.storage.json(dir, 'novelty.json', novelty);
+          const items = novelty.items;
           const discovery = this.ai.newsDiscovery();
           if (o.discover.diagnostics) discovery.counts = { ...o.discover.diagnostics };
           const scored = this.c.MOCK_OPENAI ? items : await discovery.rank(w, items);
@@ -80,6 +84,7 @@ export class Pipeline {
             items: scored,
             selected: discovery.selectTopNews(scored),
             diagnostics: discovery.counts,
+            novelty: novelty.decisions,
           };
           break;
         }

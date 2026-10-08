@@ -20,6 +20,7 @@ import {
   normalize,
   StaleWorkError,
 } from '../domain';
+import { alignNarration } from '../narration';
 import { Media, VoiceOutput, VisualOutput } from '../media';
 import { mockNews, mockScript, mockStoryboard } from '../mock';
 
@@ -41,14 +42,15 @@ export class OpenAiProvider {
     return readFile(join('prompts', name + '.md'), 'utf8');
   }
   private async request(w: Work, endpoint: string, body: any, reserve: number): Promise<any> {
-    const id = await this.repo.reserve(w, body.model, reserve, this.c.MAX_RUN_COST_USD);
+    const model = body instanceof FormData ? String(body.get('model')) : body.model;
+    const id = await this.repo.reserve(w, model, reserve, this.c.MAX_RUN_COST_USD);
     const r = await fetch('https://api.openai.com/v1/' + endpoint, {
       method: 'POST',
       headers: {
         Authorization: `Bearer ${this.c.OPENAI_API_KEY}`,
-        'Content-Type': 'application/json',
+        ...(body instanceof FormData ? {} : { 'Content-Type': 'application/json' }),
       },
-      body: JSON.stringify(body),
+      body: body instanceof FormData ? body : JSON.stringify(body),
       signal: AbortSignal.timeout(180000),
     });
     if (!r.ok) {
@@ -75,7 +77,7 @@ export class OpenAiProvider {
       const diagnostic = {
         status: r.status,
         endpoint,
-        model: body.model,
+        model,
         request_id: r.headers.get('x-request-id'),
         type: redact(details?.type),
         code: redact(details?.code),
@@ -180,6 +182,48 @@ export class OpenAiProvider {
       discovery.validateNews(await discovery.searchWithOpenAI(w, now, hours), now, hours),
     );
   }
+  async filterRepeatedNews(w: Work, items: News[], previous: News[]) {
+    if (!items.length || this.c.MOCK_OPENAI || (!previous.length && items.length < 2))
+      return { items, decisions: [] };
+    const compact = (n: News) => ({
+      id: n.id,
+      title: n.title,
+      summary: n.summary,
+      company: n.company,
+      published_at: n.published_at,
+      url: n.url,
+    });
+    const result = await this.structured(
+      w,
+      'news-novelty',
+      z.object({
+        decisions: z.array(
+          z.object({
+            id: z.string(),
+            decision: z.enum(['new', 'update', 'duplicate']),
+            matched_id: z.string().nullable(),
+            reason: z.string().min(1),
+          }),
+        ),
+      }),
+      { candidates: items.map(compact), history: previous.map(compact) },
+    );
+    const seen = new Set(previous.map((n) => n.id));
+    if (
+      result.decisions.length !== items.length ||
+      new Set(result.decisions.map((d) => d.id)).size !== items.length
+    )
+      throw new ReviewError('Incomplete event novelty check');
+    const accepted: News[] = [];
+    for (const n of items) {
+      const d = result.decisions.find((d) => d.id === n.id);
+      if (!d || (d.decision !== 'new' && (!d.matched_id || !seen.has(d.matched_id))))
+        throw new ReviewError('Invalid event novelty reference');
+      if (d.decision !== 'duplicate') accepted.push(n);
+      seen.add(n.id);
+    }
+    return { items: accepted, decisions: result.decisions };
+  }
   async rank(w: Work, items: News[]): Promise<News[]> {
     if (this.c.MOCK_OPENAI) return items;
     const scores = await this.structured(
@@ -273,16 +317,83 @@ export class OpenAiProvider {
     return this.structured(w, 'verify-script', verificationSchema, { news, script });
   }
   async storyboard(w: Work, script: Script, news: News[]): Promise<Storyboard> {
-    const board = this.c.MOCK_OPENAI
-      ? mockStoryboard(script)
-      : await this.structured(w, 'storyboard', storyboardSchema, { script, news });
+    if (this.c.MOCK_OPENAI) return mockStoryboard(script);
+    const paragraphs = [
+      script.hook,
+      ...script.segments.map((s) => s.narration),
+      script.takeaway,
+      script.cta,
+    ]
+      .filter((s) => s.trim())
+      .map((s) => s.trim().split(/\s+/));
+    const counts = paragraphs.map(() => 1);
+    const desired = Math.min(
+      10,
+      paragraphs.reduce((sum, p) => sum + p.length, 0),
+    );
+    while (counts.reduce((a, b) => a + b, 0) < desired) {
+      const next = paragraphs.map((p, i) => (p.length > counts[i] ? p.length / counts[i] : 0));
+      counts[next.indexOf(Math.max(...next))]++;
+    }
+    const scenes = paragraphs
+      .flatMap((words, i) =>
+        Array.from({ length: counts[i] }, (_, j) =>
+          words
+            .slice(
+              Math.round((j * words.length) / counts[i]),
+              Math.round(((j + 1) * words.length) / counts[i]),
+            )
+            .join(' '),
+        ),
+      )
+      .map((narration, i) => ({ scene_id: i + 1, narration }));
+    const designs = await this.structured(
+      w,
+      'storyboard',
+      z.object({
+        scenes: z
+          .array(
+            storyboardSchema.shape.scenes.element
+              .omit({ narration: true })
+              .extend({ visual_labels: z.array(z.string().max(32)).max(3) }),
+          )
+          .length(scenes.length),
+      }),
+      {
+        scenes,
+        news,
+        instruction:
+          'Scene narration and IDs are locked. Return visual design only, one design per supplied scene ID; never merge or add scenes.',
+      },
+    );
     if (
-      new Set(board.scenes.map((s) => s.scene_id)).size !== board.scenes.length ||
-      normalize(board.scenes.map((s) => s.narration).join(' ')) !== normalize(script.full_script)
+      new Set(designs.scenes.map((s) => s.scene_id)).size !== scenes.length ||
+      !designs.scenes.every((s) => scenes.some((n) => n.scene_id === s.scene_id))
     )
+      throw new Error('Storyboard scene IDs mismatch');
+    const illustrationIds = new Set<number>();
+    let sceneOffset = counts[0];
+    for (let n = 0; n < script.segments.length; n++) {
+      illustrationIds.add(sceneOffset + 1);
+      if (n === script.segments.length - 1 && counts[n + 1] > 1)
+        illustrationIds.add(sceneOffset + counts[n + 1]);
+      sceneOffset += counts[n + 1];
+    }
+    for (const design of designs.scenes) {
+      if (illustrationIds.has(design.scene_id)) design.visual_type = 'image';
+      else if (design.visual_type === 'image') design.visual_type = 'headline-card';
+    }
+    const board = {
+      scenes: scenes.map((s) => ({
+        ...designs.scenes.find((d) => d.scene_id === s.scene_id)!,
+        narration: s.narration,
+      })),
+    };
+    if (normalize(board.scenes.map((s) => s.narration).join(' ')) !== normalize(script.full_script))
       throw new Error('Storyboard must preserve exact narration in scene order');
     return board;
   }
+
   async metadata(w: Work, news: News[]) {
     const output = this.c.MOCK_OPENAI
       ? {
@@ -296,37 +407,66 @@ export class OpenAiProvider {
     return metadataSchema.parse({ ...output, description: output.description + suffix });
   }
   async voice(w: Work, dir: string, board: Storyboard): Promise<VoiceOutput> {
-    const words = board.scenes.map((s) => s.narration.split(/\s+/).length),
-      total = words.reduce((a, b) => a + b, 0),
-      paths: string[] = [];
-    for (let i = 0; i < board.scenes.length; i++) {
-      const path = join(dir, `voice-${i}.${this.c.MOCK_OPENAI ? 'wav' : 'mp3'}`);
-      paths.push(path);
-      if (this.c.MOCK_OPENAI) await this.media.mockVoice(path, (55 * words[i]) / total);
-      else {
-        const audio = await this.request(
-          w,
-          'audio/speech',
-          {
-            model: this.c.OPENAI_TTS_MODEL,
-            voice: this.c.OPENAI_TTS_VOICE,
-            input: board.scenes[i].narration,
-            instructions:
-              'Đọc tiếng Việt tự nhiên, giọng bản tin công nghệ, rõ ràng, tốc độ vừa phải. Giữ cùng một giọng và phong cách qua từng đoạn.',
-            response_format: 'mp3',
-          },
-          this.c.VOICE_CALL_RESERVE_USD,
-        );
-        await writeFile(path, audio);
-      }
+    const path = join(dir, this.c.MOCK_OPENAI ? 'voice.wav' : 'voice.mp3');
+    const narration = board.scenes.map((s) => s.narration).join(' ');
+    if (this.c.MOCK_OPENAI) {
+      await this.media.mockVoice(path, 55);
+      const tokens = narration.split(/\s+/);
+      return {
+        path,
+        duration: 55,
+        mock: true,
+        ...alignNarration(
+          board,
+          tokens.map((word, i) => ({
+            word,
+            start: (i * 55) / tokens.length,
+            end: ((i + 1) * 55) / tokens.length,
+          })),
+          55,
+        ),
+      };
     }
-    return this.media.joinVoice(
-      dir,
-      paths,
-      board.scenes.map((s) => s.scene_id),
-      this.c.MOCK_OPENAI,
+    const audio = await this.request(
+      w,
+      'audio/speech',
+      {
+        model: this.c.OPENAI_TTS_MODEL,
+        voice: this.c.OPENAI_TTS_VOICE,
+        input: narration,
+        instructions: await this.prompt('voice'),
+        response_format: 'mp3',
+      },
+      this.c.VOICE_CALL_RESERVE_USD,
     );
+    await writeFile(path, audio);
+    const duration = Number((await this.media.probe(path)).format.duration);
+    if (!Number.isFinite(duration) || duration < 40 || duration > 65)
+      throw new ReviewError(
+        `Continuous voice is ${duration.toFixed(1)}s; revise narration to fit 40-65s without speeding up audio`,
+      );
+    const body = new FormData();
+    body.set('file', new Blob([new Uint8Array(audio)], { type: 'audio/mpeg' }), 'voice.mp3');
+    body.set('model', 'whisper-1');
+    body.set('language', 'vi');
+    body.set('response_format', 'verbose_json');
+    body.append('timestamp_granularities[]', 'word');
+    body.set('prompt', narration);
+    const transcript = await this.request(
+      w,
+      'audio/transcriptions',
+      body,
+      this.c.TRANSCRIPTION_CALL_RESERVE_USD,
+    );
+    await writeFile(join(dir, 'transcription.json'), JSON.stringify(transcript, null, 2));
+    return {
+      path,
+      duration,
+      mock: false,
+      ...alignNarration(board, transcript.words || [], duration),
+    };
   }
+
   async visuals(w: Work, dir: string, board: Storyboard): Promise<VisualOutput> {
     const images: VisualOutput['images'] = [];
     for (const scene of board.scenes) {
@@ -339,9 +479,14 @@ export class OpenAiProvider {
             'images/generations',
             {
               model: this.c.OPENAI_IMAGE_MODEL,
-              prompt: (await this.prompt('image')) + '\n' + scene.visual_prompt,
+              prompt:
+                (await this.prompt('image')) +
+                '\nNarration context (do not draw text): ' +
+                scene.narration +
+                '\nComposition: ' +
+                scene.visual_prompt,
               size: '1024x1536',
-              quality: 'low',
+              quality: this.c.OPENAI_IMAGE_QUALITY,
               n: 1,
             },
             this.c.IMAGE_CALL_RESERVE_USD,
@@ -360,8 +505,16 @@ export class OpenAiProvider {
         scene.source_label,
         this.c.MOCK_OPENAI,
         bytes,
+        scene.visual_type,
+        scene.scene_id,
+        scene.visual_labels,
       );
-      images.push({ scene_id: scene.scene_id, path, fallback });
+      images.push({
+        scene_id: scene.scene_id,
+        path,
+        overlay_path: path.replace(/\.png$/, '-overlay.png'),
+        fallback,
+      });
     }
     return { images };
   }
