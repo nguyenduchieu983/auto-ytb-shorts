@@ -449,7 +449,8 @@ export class Repository {
           )
         ).rows[0].total,
       );
-      if (sum + usd > max) throw new PermanentError('Run cost reservation limit reached');
+      if (max > 0 && sum + usd > max)
+        throw new PermanentError('Run cost reservation limit reached');
       const id = randomUUID();
       await c.query(
         'INSERT INTO api_costs (id,run_id,revision,operation,model,reserved_usd) VALUES ($1,$2,$3,$4,$5,$6)',

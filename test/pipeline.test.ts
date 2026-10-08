@@ -132,6 +132,20 @@ test('Cost reservations count retries and cannot exceed configured budget', asyn
     await pool.end();
   }
 });
+test('Zero cap disables reservation blocking while preserving usage records', async () => {
+  const { repo, pool } = await setup();
+  try {
+    const run = await repo.create('2026-10-08', true);
+    const w = { runId: run.id, revision: 1, step: 'discover' as const };
+    await repo.reserve(w, 'model', 6, 0);
+    await repo.reserve(w, 'model', 6, 0);
+    assert.equal((await repo.detail(run.id)).costs.length, 2);
+    await repo.skip(run.id, 1, 'admin');
+    await assert.rejects(repo.reserve(w, 'model', 6, 0), /Run changed/);
+  } finally {
+    await pool.end();
+  }
+});
 test('Skip cancels work and late completion cannot change state', async () => {
   const { repo, pool } = await setup();
   try {

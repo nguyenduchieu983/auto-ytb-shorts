@@ -92,7 +92,7 @@ Prompt nằm trong `prompts/*.md` với version đầu file. Tin thiếu thì m�
 
 TTS tạo riêng từng scene để có timing thật, sau đó ghép audio. Ngoài 40–65 giây cần sửa script; 45–60 giây đạt mục tiêu. Subtitle chia chunk tối đa 6 từ/2 dòng, timing theo scene và tỷ lệ từ; chưa có word alignment chính xác. Image API dùng ảnh portrait rồi scale/crop về 9:16, thẻ tiêu đề/source được render bằng code. Provider image lỗi tạm thời dùng headline card; lỗi credentials/budget dừng run.
 
-Chi phí hiện là **reservation theo cấu hình**, không phải hóa đơn thực tế. Mỗi lần gọi kể cả retry đều giữ reservation; lưu thêm usage/tokens nếu provider trả. Đặt các giá trị reserve đủ cao cho model, search tool và chất lượng ảnh đang dùng. `MAX_RUN_COST_USD` chặn khi tổng reservation vượt ngân sách; không phải giới hạn spend tuyệt đối tại nhà cung cấp. V1 chưa tự tải bảng giá hoặc tính chính xác search/image/TTS billing.
+Chi phí hiện là **reservation theo cấu hình**, không phải hóa đơn thực tế. Mỗi lần gọi kể cả retry đều giữ reservation; lưu thêm usage/tokens nếu provider trả. Đặt các giá trị reserve đủ cao cho model, search tool và chất lượng ảnh đang dùng. `MAX_RUN_COST_USD` chặn khi tổng reservation vượt ngân sách; đặt `MAX_RUN_COST_USD=0` để tắt chặn local, vẫn ghi reservation/usage. Mặc định vẫn là 5 USD. Đây không phải giới hạn spend tuyệt đối tại nhà cung cấp. V1 chưa tự tải bảng giá hoặc tính chính xác search/image/TTS billing.
 
 ## Telegram
 
