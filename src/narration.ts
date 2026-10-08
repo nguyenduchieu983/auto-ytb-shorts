@@ -55,15 +55,18 @@ export function alignNarration(board: Storyboard, recognized: TimedWord[], durat
     else j++;
   }
   const coverage = anchors.size / script.length;
-  if (
-    coverage < 0.65 ||
-    board.scenes.some((s) => {
-      const indices = script.flatMap((w, n) => (w.scene_id === s.scene_id ? [n] : []));
-      return indices.filter((n) => anchors.has(n)).length / indices.length < 0.45;
-    })
-  )
+  const missingScenes = board.scenes.flatMap((s) => {
+    const indices = script.flatMap((w, n) => (w.scene_id === s.scene_id ? [n] : []));
+    const sceneCoverage = indices.filter((n) => anchors.has(n)).length / indices.length;
+    return sceneCoverage < 0.45
+      ? [`scene ${s.scene_id} (${(sceneCoverage * 100).toFixed(0)}%): ${s.narration.slice(0, 100)}`]
+      : [];
+  });
+  if (coverage < 0.65 || missingScenes.length)
     throw new ReviewError(
-      `Voice alignment coverage ${(coverage * 100).toFixed(0)}%; review pronunciation/script before rendering`,
+      `Voice alignment coverage ${(coverage * 100).toFixed(0)}%` +
+        (missingScenes.length ? `; insufficient speech for ${missingScenes.join('; ')}` : '') +
+        '; review pronunciation/script before rendering',
     );
   const starts = script.map((_, n) => (anchors.has(n) ? heard[anchors.get(n)!].start : NaN));
   for (let n = 0; n < starts.length;) {

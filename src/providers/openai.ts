@@ -439,44 +439,71 @@ export class OpenAiProvider {
         ),
       };
     }
-    const audio = await this.request(
-      w,
-      'audio/speech',
-      {
-        model: this.c.OPENAI_TTS_MODEL,
-        voice: this.c.OPENAI_TTS_VOICE,
-        input: narration,
-        instructions: await this.prompt('voice'),
-        response_format: 'mp3',
-      },
-      this.c.VOICE_CALL_RESERVE_USD,
-    );
-    await writeFile(path, audio);
-    const duration = Number((await this.media.probe(path)).format.duration);
-    if (!Number.isFinite(duration) || duration < 40 || duration > 65)
-      throw new ReviewError(
-        `Continuous voice is ${duration.toFixed(1)}s; revise narration to fit 40-65s without speeding up audio`,
+    for (let pass = 1; pass <= 2; pass++) {
+      const audio = await this.request(
+        w,
+        'audio/speech',
+        {
+          model: this.c.OPENAI_TTS_MODEL,
+          voice: this.c.OPENAI_TTS_VOICE,
+          input: narration,
+          instructions:
+            (await this.prompt('voice')) +
+            (pass === 2
+              ? '\nThe previous recording failed alignment. Read every sentence completely, including the final question. Do not omit any ending words.'
+              : ''),
+          response_format: 'mp3',
+        },
+        this.c.VOICE_CALL_RESERVE_USD,
       );
-    const body = new FormData();
-    body.set('file', new Blob([new Uint8Array(audio)], { type: 'audio/mpeg' }), 'voice.mp3');
-    body.set('model', 'whisper-1');
-    body.set('language', 'vi');
-    body.set('response_format', 'verbose_json');
-    body.append('timestamp_granularities[]', 'word');
-    body.set('prompt', narration);
-    const transcript = await this.request(
-      w,
-      'audio/transcriptions',
-      body,
-      this.c.TRANSCRIPTION_CALL_RESERVE_USD,
-    );
-    await writeFile(join(dir, 'transcription.json'), JSON.stringify(transcript, null, 2));
-    return {
-      path,
-      duration,
-      mock: false,
-      ...alignNarration(board, transcript.words || [], duration),
-    };
+      await writeFile(path, audio);
+      await writeFile(join(dir, `voice-pass-${pass}.mp3`), audio);
+      const duration = Number((await this.media.probe(path)).format.duration);
+      if (!Number.isFinite(duration) || duration < 40 || duration > 65)
+        throw new ReviewError(
+          `Continuous voice is ${duration.toFixed(1)}s; revise narration to fit 40-65s without speeding up audio`,
+        );
+      const body = new FormData();
+      body.set('file', new Blob([new Uint8Array(audio)], { type: 'audio/mpeg' }), 'voice.mp3');
+      body.set('model', 'whisper-1');
+      body.set('language', 'vi');
+      body.set('response_format', 'verbose_json');
+      body.append('timestamp_granularities[]', 'word');
+      body.set('prompt', narration);
+      const transcript = await this.request(
+        w,
+        'audio/transcriptions',
+        body,
+        this.c.TRANSCRIPTION_CALL_RESERVE_USD,
+      );
+      await writeFile(join(dir, 'transcription.json'), JSON.stringify(transcript, null, 2));
+      await writeFile(
+        join(dir, `transcription-pass-${pass}.json`),
+        JSON.stringify(transcript, null, 2),
+      );
+      try {
+        return {
+          path,
+          duration,
+          mock: false,
+          ...alignNarration(board, transcript.words || [], duration),
+        };
+      } catch (error) {
+        if (!(error instanceof ReviewError)) throw error;
+        await writeFile(
+          join(dir, `alignment-pass-${pass}.json`),
+          JSON.stringify({ pass, error: error.message }, null, 2),
+        );
+        await this.repo.log?.(
+          w,
+          `Voice pass ${pass}/2 rejected: ${error.message}` +
+            (pass === 1 ? '; regenerating continuous speech once' : ''),
+          'warn',
+        );
+        if (pass === 2) throw error;
+      }
+    }
+    throw new ReviewError('Voice alignment failed after two recordings');
   }
 
   async visuals(w: Work, dir: string, board: Storyboard): Promise<VisualOutput> {

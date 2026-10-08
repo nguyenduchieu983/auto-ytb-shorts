@@ -37,7 +37,10 @@ test('Alignment rejects unrelated transcription, invalid timestamps and missing 
     () => alignNarration(board, [{ word: 'Xin', start: NaN, end: 1 }], 9),
     /timestamps/,
   );
-  assert.throws(() => alignNarration(board, words.slice(0, 4), 9), /coverage/);
+  assert.throws(
+    () => alignNarration(board, words.slice(0, 4), 9),
+    /scene 2 \(0%\): Tin mới hôm nay/,
+  );
 });
 test('Alignment interpolates a small unmatched numeric span without changing spoken copy', () => {
   const partial = words.filter((_, i) => i !== 2);
@@ -179,5 +182,52 @@ test('Live voice uses one speech call plus multipart timestamp alignment for all
     assert.equal(result.alignment_coverage, 1);
   } finally {
     await pool.end(); /* Test artifacts intentionally remain under ignored storage. */
+  }
+});
+
+test('Voice retries missing closing speech once and rejects a second incomplete recording', async () => {
+  for (const recovered of [true, false]) {
+    const { c, pool } = await setup();
+    c.MOCK_OPENAI = false;
+    const provider = new OpenAiProvider(
+      c,
+      { log: async () => {} } as any,
+      {
+        probe: async () => ({ format: { duration: 55 } }),
+      } as any,
+    );
+    const { mkdir, readFile } = await import('node:fs/promises');
+    const { join } = await import('node:path');
+    const { randomUUID } = await import('node:crypto');
+    const dir = join(c.STORAGE_ROOT, randomUUID());
+    await mkdir(dir, { recursive: true });
+    let speechCalls = 0,
+      transcriptionCalls = 0;
+    (provider as any).request = async (_w: any, endpoint: string, body: any) => {
+      if (endpoint === 'audio/speech') {
+        speechCalls++;
+        assert.equal(body.input, board.scenes.map((s) => s.narration).join(' '));
+        assert.match(body.instructions, /final question/);
+        return Buffer.from('audio fixture');
+      }
+      transcriptionCalls++;
+      return {
+        words: (recovered && speechCalls === 2 ? words : words.slice(0, 4)).map((w) => ({
+          ...w,
+          start: w.start * 6,
+          end: w.end * 6,
+        })),
+      };
+    };
+    try {
+      const output = provider.voice({ runId: 'x', revision: 1, step: 'voice' }, dir, board);
+      if (recovered) assert.equal((await output).alignment_coverage, 1);
+      else await assert.rejects(output, /scene 2 \(0%\)/);
+      assert.equal(speechCalls, 2);
+      assert.equal(transcriptionCalls, 2);
+      assert.match(await readFile(join(dir, 'alignment-pass-1.json'), 'utf8'), /scene 2/);
+    } finally {
+      await pool.end();
+    }
   }
 });
