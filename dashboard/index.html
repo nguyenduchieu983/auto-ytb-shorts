@@ -1,0 +1,142 @@
+<!doctype html>
+<html lang="vi">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Shorts Studio · Production</title>
+    <link rel="stylesheet" href="/dashboard/style.css" />
+    <script defer src="/dashboard/app.js"></script>
+  </head>
+  <body>
+    <section id="login" class="login" hidden>
+      <form id="login-form" class="login-card">
+        <span class="brand-mark">S</span>
+        <p class="eyebrow">SHORTS STUDIO</p>
+        <h1>Xưởng video của bạn.</h1>
+        <p class="muted">Theo dõi từng bước, xem preview và duyệt video từ một nơi.</p>
+        <label for="token">Admin token</label
+        ><input
+          id="token"
+          type="password"
+          autocomplete="off"
+          required
+          placeholder="ADMIN_TOKEN trong file .env"
+        />
+        <p class="hint">Phiên đăng nhập 12 giờ. Token không lưu vào trình duyệt.</p>
+        <button class="primary" type="submit">Mở dashboard →</button>
+        <p id="login-error" role="alert"></p>
+      </form>
+    </section>
+    <div id="app" class="shell" hidden>
+      <aside class="sidebar">
+        <a class="brand" href="/dashboard"
+          ><span class="brand-mark">S</span
+          ><span>Shorts Studio<small>VIDEO PRODUCTION</small></span></a
+        >
+        <p class="nav-label">WORKSPACE</p>
+        <button class="nav active" id="production-nav"><span>◫</span> Sản xuất video</button
+        ><button class="nav" id="system-nav"><span>◎</span> Hệ thống & logs</button>
+        <div class="side-bottom">
+          <div id="side-mode"></div>
+          <p>AI & Tech Daily<br /><small>Vận hành trên máy local</small></p>
+          <button class="quiet" id="logout">Đăng xuất ↗</button>
+        </div>
+      </aside>
+      <main>
+        <header class="topbar">
+          <span id="breadcrumb">Workspace / <b>Sản xuất video</b></span>
+          <div>
+            <span id="sync" class="sync">Đang kết nối…</span
+            ><button id="refresh" class="quiet" aria-label="Làm mới">↻ Làm mới</button>
+          </div>
+        </header>
+        <div class="workspace">
+          <div class="page-heading">
+            <div>
+              <p class="eyebrow">PRODUCTION OVERVIEW</p>
+              <h1>Quản lý sản xuất video<span class="accent">.</span></h1>
+              <p class="muted">Từ tìm nguồn đến xuất bản. Mọi bước, mọi bản dựng.</p>
+            </div>
+            <button id="create" class="primary">＋ Tạo video mới</button>
+          </div>
+          <div id="runtime-strip" class="runtime-strip"></div>
+          <div id="notice" class="notice" role="status" hidden></div>
+          <section id="production">
+            <div id="stats" class="stats"></div>
+            <div class="board">
+              <section class="run-panel">
+                <div class="panel-title">
+                  <h2>Video <span id="run-count"></span></h2>
+                  <span class="live-label">● Cập nhật trực tiếp</span>
+                </div>
+                <div class="filters">
+                  <input
+                    id="search"
+                    aria-label="Tìm video"
+                    placeholder="Tìm ID hoặc ngày…"
+                  /><select id="filter" aria-label="Lọc trạng thái">
+                    <option value="">Tất cả trạng thái</option>
+                    <option value="RUNNING">Đang sản xuất</option>
+                    <option value="WAITING_APPROVAL">Chờ duyệt</option>
+                    <option value="FAILED">Lỗi</option>
+                    <option value="NEEDS_REVISION">Cần chỉnh sửa</option>
+                    <option value="UPLOAD_UNCERTAIN">Cần đối soát upload</option>
+                    <option value="UPLOADED_PRIVATE">Đã upload riêng tư</option>
+                    <option value="PUBLISHED">Đã xuất bản</option>
+                    <option value="PENDING">Đang chờ</option>
+                    <option value="UPLOADING">Đang upload</option>
+                    <option value="SKIPPED">Đã bỏ qua</option>
+                  </select>
+                </div>
+                <div id="run-list" class="run-list"></div>
+                <div class="pagination">
+                  <button id="prev" class="quiet">← Trước</button><span id="page-info"></span
+                  ><button id="next" class="quiet">Sau →</button>
+                </div>
+              </section>
+              <section id="detail" class="detail-panel">
+                <div class="empty">
+                  <span>◫</span>
+                  <h2>Chọn một video để theo dõi</h2>
+                  <p>Xem tiến độ, nội dung, bản dựng và logs của từng revision.</p>
+                </div>
+              </section>
+            </div>
+          </section>
+          <section id="system" hidden>
+            <div class="system-heading">
+              <h2>Hệ thống & logs</h2>
+              <p class="muted">
+                Heartbeat cập nhật mỗi 15 giây. Worker được coi là offline sau 45 giây không có tín
+                hiệu.
+              </p>
+            </div>
+            <div id="system-info" class="stats"></div>
+            <p class="hint">
+              Logs process hiển thị tối đa 4 KB cuối mỗi file trong storage/runtime. Các sự kiện
+              pipeline được lưu trong PostgreSQL và xem tại chi tiết video.
+            </p>
+            <div id="process-logs" class="process-logs"></div>
+          </section>
+        </div>
+      </main>
+    </div>
+    <dialog id="confirm">
+      <form method="dialog">
+        <p class="eyebrow">XÁC NHẬN THAO TÁC</p>
+        <h2 id="confirm-title"></h2>
+        <p id="confirm-text"></p>
+        <label id="video-id-label" hidden
+          >ID video YouTube đã kiểm tra<input
+            id="video-id"
+            placeholder="ID gồm 11 ký tự"
+            maxlength="11"
+        /></label>
+        <div class="dialog-actions">
+          <button formnovalidate value="cancel" class="secondary">Hủy</button
+          ><button id="confirm-ok" value="ok" class="primary">Xác nhận</button>
+        </div>
+      </form>
+    </dialog>
+  </body>
+</html>

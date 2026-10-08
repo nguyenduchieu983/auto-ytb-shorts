@@ -44,6 +44,10 @@ export class OpenAiProvider {
   private async request(w: Work, endpoint: string, body: any, reserve: number): Promise<any> {
     const model = body instanceof FormData ? String(body.get('model')) : body.model;
     const id = await this.repo.reserve(w, model, reserve, this.c.MAX_RUN_COST_USD);
+    await this.repo.log?.(
+      w,
+      `OpenAI ${endpoint} started; model=${model}; reservation=$${reserve.toFixed(2)}`,
+    );
     const r = await fetch('https://api.openai.com/v1/' + endpoint, {
       method: 'POST',
       headers: {
@@ -97,10 +101,15 @@ export class OpenAiProvider {
       if ([400, 401, 403, 404].includes(r.status)) throw new PermanentError(message);
       throw new Error(message);
     }
-    if (endpoint === 'audio/speech') return Buffer.from(await r.arrayBuffer());
+    if (endpoint === 'audio/speech') {
+      const audio = Buffer.from(await r.arrayBuffer());
+      await this.repo.log?.(w, 'OpenAI speech completed; audio received');
+      return audio;
+    }
     const value: any = await r.json();
     await this.repo.usage(id, value.usage);
     if (value.status && value.status !== 'completed') throw new Error('OpenAI response incomplete');
+    await this.repo.log?.(w, `OpenAI ${endpoint} completed`);
     return value;
   }
   private outputText(r: any): string {
@@ -173,6 +182,9 @@ export class OpenAiProvider {
         rank: (w, items) => this.rank(w, items),
       },
       loader,
+      async (w, message) => {
+        await this.repo.log?.(w, message);
+      },
     );
   }
   async discover(w: Work, now: Date, hours: number, loader?: DocumentLoader): Promise<News[]> {

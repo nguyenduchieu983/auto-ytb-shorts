@@ -6,6 +6,7 @@ import { Work } from './domain';
 import { TelegramPolling } from './telegram-polling';
 import { parseTelegramUpdate } from './providers/telegram';
 import { handleTelegramCommand } from './telegram-commands';
+import { randomUUID } from 'node:crypto';
 
 export class QueueRuntime {
   private connection: IORedis;
@@ -15,6 +16,8 @@ export class QueueRuntime {
   private pumping = false;
   private closing = false;
   private polling?: TelegramPolling;
+  private heartbeatTimer?: NodeJS.Timeout;
+  private heartbeatId = randomUUID();
   constructor(private pipeline: Pipeline) {
     this.connection = new IORedis(pipeline.c.REDIS_URL, { maxRetriesPerRequest: null });
     this.queues = Object.fromEntries(
@@ -74,6 +77,10 @@ export class QueueRuntime {
         },
       );
     else await this.queues.daily.removeJobScheduler('daily-news-shorts');
+    await this.heartbeat();
+    this.heartbeatTimer = setInterval(() => {
+      this.heartbeat().catch((e) => console.error(safeError(e, this.pipeline.c)));
+    }, 15000);
     if (!this.pipeline.c.MOCK_TELEGRAM && this.pipeline.c.TELEGRAM_UPDATE_MODE === 'polling') {
       this.polling = new TelegramPolling(this.pipeline.c, this.pipeline.repo.pool);
       this.polling.start();
@@ -82,6 +89,12 @@ export class QueueRuntime {
     this.timer = setInterval(() => {
       this.pump().catch((e) => console.error(safeError(e, this.pipeline.c)));
     }, 2000);
+  }
+  private async heartbeat() {
+    await this.pipeline.repo.pool.query(
+      'INSERT INTO runtime_heartbeats (id,pid) VALUES ($1,$2) ON CONFLICT (id) DO UPDATE SET updated_at=now()',
+      [this.heartbeatId, process.pid],
+    );
   }
   async pump() {
     if (this.pumping || this.closing) return;
@@ -146,10 +159,14 @@ export class QueueRuntime {
   async close() {
     this.closing = true;
     if (this.timer) clearInterval(this.timer);
+    if (this.heartbeatTimer) clearInterval(this.heartbeatTimer);
     await this.polling?.close();
     while (this.pumping) await new Promise((resolve) => setTimeout(resolve, 25));
     await Promise.all(this.workers.map((w) => w.close()));
     await Promise.all(Object.values(this.queues).map((q) => q.close()));
     await this.connection.quit();
+    await this.pipeline.repo.pool.query('DELETE FROM runtime_heartbeats WHERE id=$1', [
+      this.heartbeatId,
+    ]);
   }
 }

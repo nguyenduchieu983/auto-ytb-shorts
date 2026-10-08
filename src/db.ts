@@ -22,6 +22,7 @@ export async function migrate(pool: Pool, memory = false): Promise<void> {
     if (!memory) await client.query('SELECT pg_advisory_lock(74619320)');
     await client.query(await readFile(resolve('migrations/001_initial.sql'), 'utf8'));
     await client.query(await readFile(resolve('migrations/002_manual_runs.sql'), 'utf8'));
+    await client.query(await readFile(resolve('migrations/003_runtime.sql'), 'utf8'));
   } finally {
     if (!memory) await client.query('SELECT pg_advisory_unlock(74619320)');
     client.release();
@@ -37,6 +38,12 @@ const STOPPED = new Set([
 ]);
 export class Repository {
   constructor(public readonly pool: Pool) {}
+  async log(w: Work, message: string, level = 'info') {
+    await this.pool.query(
+      'INSERT INTO pipeline_logs (id,run_id,revision,step,level,message) VALUES ($1,$2,$3,$4,$5,$6)',
+      [randomUUID(), w.runId, w.revision, w.step, level, message],
+    );
+  }
   async tx<T>(fn: (c: PoolClient) => Promise<T>): Promise<T> {
     const c = await this.pool.connect();
     try {
@@ -197,6 +204,17 @@ export class Repository {
       await c.query(
         'UPDATE daily_runs SET status=$2,error_message=NULL,updated_at=now() WHERE id=$1',
         [w.runId, w.step === 'upload' ? 'UPLOADING' : 'RUNNING'],
+      );
+      await c.query(
+        'INSERT INTO pipeline_logs (id,run_id,revision,step,level,message) VALUES ($1,$2,$3,$4,$5,$6)',
+        [
+          randomUUID(),
+          w.runId,
+          w.revision,
+          w.step,
+          'info',
+          `Step started (attempt ${row.attempts + 1})`,
+        ],
       );
       return { run, token, attempt: row.attempts + 1, outputs };
     });

@@ -1,11 +1,9 @@
 import 'reflect-metadata';
 import {
   Body,
-  CanActivate,
   Catch,
   Controller,
   ExceptionFilter,
-  ExecutionContext,
   Get,
   HttpException,
   Inject,
@@ -13,32 +11,20 @@ import {
   Param,
   Post,
   Req,
+  Res,
   UseGuards,
 } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
 import { Pool } from 'pg';
-import { timingSafeEqual } from 'node:crypto';
 import { z, ZodError } from 'zod';
 import { Config, loadConfig, localDate } from './config';
 import { migrate, Repository } from './db';
 import { PermanentError, STEPS } from './domain';
 import { Pipeline, safeError } from './engine';
 import { parseTelegramUpdate } from './providers/telegram';
+import { AdminGuard, equal } from './auth';
+import { DashboardController, DashboardPublicController } from './dashboard';
 
-function equal(a: string, b: string): boolean {
-  const x = Buffer.from(a),
-    y = Buffer.from(b);
-  return x.length === y.length && timingSafeEqual(x, y);
-}
-class AdminGuard implements CanActivate {
-  constructor(@Inject('CONFIG') private c: Config) {}
-  canActivate(context: ExecutionContext): boolean {
-    const req = context.switchToHttp().getRequest();
-    if (!equal(String(req.headers.authorization || ''), `Bearer ${this.c.ADMIN_TOKEN}`))
-      throw new HttpException('Unauthorized', 401);
-    return true;
-  }
-}
 @Catch()
 class Errors implements ExceptionFilter {
   constructor(private c: Config) {}
@@ -102,6 +88,9 @@ class PipelineController {
 @Controller()
 class PublicController {
   constructor(@Inject('PIPELINE') private p: Pipeline) {}
+  @Get() home(@Res() res: any) {
+    res.redirect('/dashboard');
+  }
   @Get('health') async health() {
     await this.p.repo.pool.query('SELECT 1');
     return { ok: true };
@@ -131,7 +120,12 @@ class PublicController {
 }
 export async function createApp(pipeline: Pipeline) {
   @Module({
-    controllers: [PipelineController, PublicController],
+    controllers: [
+      PipelineController,
+      PublicController,
+      DashboardController,
+      DashboardPublicController,
+    ],
     providers: [
       { provide: 'CONFIG', useValue: pipeline.c },
       { provide: 'PIPELINE', useValue: pipeline },
@@ -140,6 +134,11 @@ export async function createApp(pipeline: Pipeline) {
   })
   class AppModule {}
   const app = await NestFactory.create(AppModule, { logger: ['error', 'warn', 'log'] });
+  app.use((req: any, res: any, next: any) => {
+    if (req.path.startsWith('/dashboard/api') || req.path.startsWith('/pipeline'))
+      res.set('Cache-Control', 'no-store');
+    next();
+  });
   app.useGlobalFilters(new Errors(pipeline.c));
   await app.init();
   return app;

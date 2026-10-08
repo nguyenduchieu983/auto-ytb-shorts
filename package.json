@@ -21,7 +21,7 @@
     "demo": "tsx scripts/demo.ts",
     "test": "tsx --test test/*.test.ts",
     "check": "npm run build && npm test",
-    "format": "prettier --write src scripts test package.json tsconfig.json README.md",
+    "format": "prettier --write src scripts test dashboard package.json tsconfig.json README.md",
     "oauth": "tsx scripts/oauth.ts",
     "news:discover": "tsx scripts/news-discovery.ts",
     "video:preview": "tsx scripts/quality-preview.ts"

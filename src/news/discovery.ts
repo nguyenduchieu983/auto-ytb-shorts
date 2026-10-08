@@ -112,6 +112,7 @@ export class NewsDiscoveryService {
     private c: Config,
     private ai: DiscoveryAI,
     private load: DocumentLoader = fetchDocument,
+    private log?: (w: Work, message: string) => Promise<void>,
   ) {}
   private async begin(w: Work) {
     if (this.directory) return;
@@ -222,6 +223,7 @@ export class NewsDiscoveryService {
   }
   async searchWithOpenAI(w: Work, now: Date, hours: number): Promise<News[]> {
     await this.begin(w);
+    await this.log?.(w, `Searching live web: ${hours}h window`);
     const label = `web-${hours}h-${++this.serial}`;
     const input = `Search LIVE WEB, not memory: hottest AI and tech news ${new Date(now.getTime() - hours * 3600000).toISOString().slice(0, 10)} through ${now.toISOString().slice(0, 10)}. Prefer the last ${hours} hours. Find at least 10 distinct article candidates if available, using separate short queries for new AI models, AI/coding agents, developer tools, APIs, cybersecurity, robotics, infrastructure, chips and emerging AI startups/services. Include a noteworthy newly announced tool/repo/service. Prefer ${preferredDomains.join(', ')}, but include other valid publishers. Cite original article URLs and actual publication dates; unknown dates must remain unknown.`;
     const response = await this.ai.search(w, input);
@@ -243,10 +245,15 @@ export class NewsDiscoveryService {
     const snapshots = (await mapLimited(urls.slice(0, 40), (url) => this.page(url, 'web'))).filter(
       (s): s is SourceSnapshot => !!s,
     );
+    await this.log?.(
+      w,
+      `Web sources: ${urls.length}; readable articles: ${snapshots.length}; extracting news`,
+    );
     return this.extract(w, raw, urls, snapshots, now, label);
   }
   async searchWithFallbackFeeds(w: Work, now: Date): Promise<News[]> {
     await this.begin(w);
+    await this.log?.(w, 'Reading fallback RSS/Atom feeds');
     const feedLogs: any[] = [];
     const entries = (
       await mapLimited(fallbackFeeds, async (feed) => {
@@ -348,6 +355,10 @@ export class NewsDiscoveryService {
       this.counts.afterDedupCount = items.length;
       this.counts.afterSourceFilterCount = items.length;
       console.log({ windowHours: hours, ...this.counts });
+      await this.log?.(
+        w,
+        `${hours}h window: ${items.length} valid candidates after date filter and dedup`,
+      );
       if (items.length >= 5) break;
     }
     if (items.length < 5) {
@@ -372,6 +383,10 @@ export class NewsDiscoveryService {
       items,
     });
     console.log(this.counts);
+    await this.log?.(
+      w,
+      `Discovery completed: ${items.length} candidates; ${this.counts.rawSourcesCount} web sources; ${this.counts.feedSourcesCount} feed sources`,
+    );
     if (!items.length)
       throw new SkipError(
         `NEWS_DISCOVERY_EMPTY: web sources=${this.counts.rawSourcesCount}, feed sources=${this.counts.feedSourcesCount}, extracted=${this.counts.extractedNewsCount}; ${this.errors.join('; ') || 'all candidates outside date window/duplicate/invalid; inspect discovery summary'}`,

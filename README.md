@@ -54,6 +54,43 @@ API mặc định bind `127.0.0.1:3000` qua `HOST`; cần truy cập từ máy k
 
 ## Trigger và duyệt
 
+### Dashboard quản lý sản xuất
+
+Mở `http://127.0.0.1:3000/dashboard` sau khi chạy API và worker. Trang `/`
+tự chuyển đến dashboard. Đăng nhập bằng `ADMIN_TOKEN` trong `.env` cục bộ;
+không gửi token lên chat. Phiên dùng cookie HttpOnly/SameSite=Strict, hết hạn
+sau 12 giờ; token không được lưu vào localStorage hoặc trả trong HTML.
+
+- Tổng quan tất cả run, lọc trạng thái/tìm ID hoặc ngày, phân trang 20 run.
+- Cập nhật mỗi 3 giây khi tab đang mở; hiển thị 13 bước, các nhánh chạy song
+  song, trạng thái, attempts và lỗi. Chuyển revision để xem bản cũ.
+- Xem tin nguồn, script, metadata, voice, hình minh họa, MP4, phụ đề và QC.
+  Media chỉ được đọc sau đăng nhập, hỗ trợ seek video bằng byte ranges.
+- Logs pipeline gồm bắt đầu/kết thúc/lỗi, request OpenAI, tiến độ discovery và
+  render từng cảnh. UI hiện 200 sự kiện gần nhất của revision, lọc bước/mức log.
+  Các log cũ vẫn nằm trong PostgreSQL.
+- Tạo run độc lập; duyệt & upload, bỏ qua, retry đúng bước lỗi, regenerate
+  script/voice/visuals/render, hoặc đối soát upload bằng video ID đã kiểm tra.
+  Thao tác có xác nhận; revision cũ khóa nút. Backend giữ nguyên approval,
+  checksum, QC, revision và chống upload trùng.
+- Trang Hệ thống kiểm tra Redis/DB và heartbeat worker (15 giây; offline nếu
+  quá 45 giây). Worker heartbeat chứng minh process đang sống, không chứng minh
+  provider bên ngoài đang kết nối thành công. Inbox Telegram và modes cũng hiện.
+- Logs process đọc tối đa 4 KB cuối mỗi file `storage/runtime/api.stdout.log`,
+  `api.stderr.log`, `worker.stdout.log`, `worker.stderr.log`. Nếu khởi động bằng
+  terminal không redirect vào các file đó, xem logs terminal và logs pipeline.
+- Chi phí hiển thị reservation qua mọi revision và token usage nếu có; đây
+  không phải hóa đơn thật của nhà cung cấp.
+
+Dashboard không thay đổi defaults mock/manual/private và không bật scheduler
+hay auto-publish. Không expose dashboard ra internet trực tiếp. Nếu dùng reverse
+proxy, giữ HTTPS và chuyển tiếp đúng Origin/Host cho các request dùng cookie.
+
+API dashboard nằm dưới `/dashboard/api`; bearer `ADMIN_TOKEN` vẫn dùng được
+cho API và test. `npm run check` có tests đăng nhập, chặn mutation khác origin,
+dedup yêu cầu tạo run, revision lịch sử, redaction và byte ranges media. Các tests
+dùng pg-mem và provider mock, không chứng minh API live.
+
 Đọc `ADMIN_TOKEN` từ `.env` và đặt vào biến shell cục bộ, không gửi token lên chat.
 
 ```powershell
@@ -158,7 +195,7 @@ Khi PostgreSQL/Redis đã kết nối: `npm run test:redis` kiểm tra retry/ded
 
 Trước production cần chạy với PostgreSQL/Redis thật, thử concurrent trigger, kill/restart worker, Telegram live, OpenAI live (nghe/xem tiếng Việt), OAuth refresh và upload private trên đúng kênh. Chưa nghiệm thu dịch vụ ngoài chỉ bằng mock pass.
 
-Backup database PostgreSQL và thư mục storage; bật persistence Redis và giữ revision đang chờ duyệt/đang upload. V1 không tự xóa assets, không có analytics feedback, UI admin, text-to-video hay đa nền tảng. Scheduler và auto-publish là opt-in. Mốc vận hành 7 ngày/30 ngày trong đặc tả cần theo dõi thực tế sau deployment.
+Backup database PostgreSQL và thư mục storage; bật persistence Redis và giữ revision đang chờ duyệt/đang upload. V1 không tự xóa assets, không có analytics feedback, text-to-video hay đa nền tảng. Scheduler và auto-publish là opt-in. Mốc vận hành 7 ngày/30 ngày trong đặc tả cần theo dõi thực tế sau deployment.
 
 Nguồn kỹ thuật: [OpenAI Web Search](https://developers.openai.com/api/docs/guides/tools-web-search), [Structured Outputs](https://developers.openai.com/api/docs/guides/structured-outputs), [TTS](https://developers.openai.com/api/docs/guides/text-to-speech), [Image API](https://developers.openai.com/api/docs/guides/image-generation), [BullMQ Job IDs](https://docs.bullmq.io/guide/jobs/job-ids), [Job Schedulers](https://docs.bullmq.io/guide/job-schedulers), [YouTube resumable uploads](https://developers.google.com/youtube/v3/guides/using_resumable_upload_protocol), [videos.insert](https://developers.google.com/youtube/v3/docs/videos/insert).
 

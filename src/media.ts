@@ -173,12 +173,14 @@ export class Media {
     visuals: VisualOutput,
     voice: VoiceOutput,
     subtitles: { path: string },
+    progress?: (message: string) => Promise<void>,
   ) {
     const clips: string[] = [];
     for (let i = 0; i < voice.timings.length; i++) {
       const timing = voice.timings[i],
         image = visuals.images.find((v) => v.scene_id === timing.scene_id);
       if (!image) throw new PermanentError('Missing scene visual');
+      await progress?.(`Rendering scene ${i + 1}/${voice.timings.length}`);
       const length = timing.end - timing.start,
         frames = Math.round(timing.end * 30) - Math.round(timing.start * 30);
       const name = `scene-${i}.mp4`;
@@ -220,6 +222,7 @@ export class Media {
       );
     }
     await writeFile(join(dir, 'clips.txt'), clips.map((n) => `file '${n}'`).join('\n'));
+    await progress?.('Joining scenes, burning subtitles and mixing audio');
     await copyFile(subtitles.path, join(dir, 'subtitles.ass'));
     await copyFile(voice.path, join(dir, 'voice.mp3'));
     const args = ['-y', '-f', 'concat', '-safe', '1', '-i', 'clips.txt', '-i', 'voice.mp3'];
@@ -263,6 +266,7 @@ export class Media {
       'final.mp4',
     );
     await processFile(this.ffmpeg, args, dir);
+    await progress?.('Final MP4 rendered; creating thumbnail');
     await processFile(
       this.ffmpeg,
       ['-y', '-ss', '1', '-i', 'final.mp4', '-frames:v', '1', 'thumbnail.png'],

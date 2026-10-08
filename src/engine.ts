@@ -27,9 +27,12 @@ export function safeError(error: unknown, c: Config): string {
     'TELEGRAM_BOT_TOKEN',
     'ADMIN_TOKEN',
     'TELEGRAM_WEBHOOK_SECRET',
+    'DATABASE_URL',
+    'REDIS_URL',
   ] as const)
     if (c[key]) text = text.split(c[key]).join('[redacted]');
   return text
+    .replace(/(?:postgres(?:ql)?|rediss?):\/\/[^\s"']+/gi, '[connection]')
     .replace(/https:\/\/www\.googleapis\.com\/upload\/[^\s]+/g, '[upload-session]')
     .slice(0, 4000);
 }
@@ -131,7 +134,9 @@ export class Pipeline {
           result = await this.media.subtitles(dir, o.storyboard, o.voice);
           break;
         case 'render': {
-          result = await this.media.render(dir, o.visuals, o.voice, o.subtitles);
+          result = await this.media.render(dir, o.visuals, o.voice, o.subtitles, (message) =>
+            this.repo.log(w, message),
+          );
           result.checksum = await this.storage.checksum(result.path);
           break;
         }
