@@ -2,7 +2,8 @@ import { readFile, stat } from 'node:fs/promises';
 import { Config } from '../config';
 import { PermanentError, Run } from '../domain';
 
-export interface TelegramCommand {
+export type TelegramCommand = { action: 'gen-new-video'; actor: string } | ExistingTelegramCommand;
+export interface ExistingTelegramCommand {
   action: 'publish' | 'regenerate' | 'skip' | 'status';
   runId: string;
   revision: number;
@@ -25,22 +26,26 @@ export function parseTelegramUpdate(update: any, c: Config): TelegramCommand {
       .trim()
       .split(/\s+/),
     action = parts[0]?.replace(/^\//, '').split('@')[0];
+  if (['gen-new-video', 'gen_new_video'].includes(action)) {
+    if (parts.length !== 1) throw new PermanentError('Use /gen-new-video without arguments');
+    return { action: 'gen-new-video', actor: `telegram:${user}` };
+  }
   if (
     !['publish', 'regenerate', 'skip', 'status'].includes(action) ||
     !parts[1] ||
     !/^\d+$/.test(parts[2] || '')
   )
     throw new PermanentError(
-      'Use /publish|skip|status <runId> <revision> or /regenerate <runId> <revision> script|voice|visuals|render',
+      'Use /gen-new-video or /publish|skip|status <runId> <revision> or /regenerate <runId> <revision> script|voice|visuals|render',
     );
   const target = parts[3];
   if (action === 'regenerate' && !['script', 'voice', 'visuals', 'render'].includes(target))
     throw new PermanentError('Invalid regeneration target');
   return {
-    action: action as TelegramCommand['action'],
+    action: action as ExistingTelegramCommand['action'],
     runId: parts[1],
     revision: Number(parts[2]),
-    target: target as TelegramCommand['target'],
+    target: target as ExistingTelegramCommand['target'],
     actor: `telegram:${user}`,
   };
 }

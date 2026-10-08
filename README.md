@@ -1,5 +1,7 @@
 # AI & Tech YouTube Shorts
 
+Hướng dẫn đầy đủ trong một file: [Vận hành local và chuyển máy](HUONG_DAN_VAN_HANH_VA_CHUYEN_MAY.md). Bắt đầu thủ công qua Telegram bằng `/gen-new-video`; cron mặc định tắt.
+
 Pipeline NestJS/TypeScript tạo một bản tin tiếng Việt mỗi ngày: tìm nguồn → chọn 3 mục → script/verify → storyboard → voice + visuals → subtitle → FFmpeg → QC → Telegram review → YouTube.
 
 ## Chạy demo ngay trên Windows
@@ -98,9 +100,7 @@ npm.cmd run news:discover
 
 Lệnh in RAW SOURCES, EXTRACTED, AFTER DATE FILTER, AFTER DEDUP, AFTER SOURCE FILTER, FINAL SELECTED và top 3. Report + ledger reservation/usage lưu trong storage/discovery-live/latest.json. [Điều tra root cause](docs/news-discovery.md).
 
-Prompt nằm trong `prompts/*.md` với version đầu file. Tin thiếu thì mở rộng 48h; chọn 3 tin hoặc 2 tin + 1 tool có nguồn. Không đủ thì skip. Tin đã dùng trong run đã upload sẽ bị dedup ở các ngày sau.
-
-TTS tạo riêng từng scene để có timing thật, sau đó ghép audio. Ngoài 40–65 giây cần sửa script; 45–60 giây đạt mục tiêu. Subtitle chia chunk tối đa 6 từ/2 dòng, timing theo scene và tỷ lệ từ; chưa có word alignment chính xác. Image API dùng ảnh portrait rồi scale/crop về 9:16, thẻ tiêu đề/source được render bằng code. Provider image lỗi tạm thời dùng headline card; lỗi credentials/budget dừng run.
+Prompt nằm trong `prompts/*.md`. Chọn tối đa 3 tin thực có, kiểm tra trùng sự kiện với lịch sử 90 ngày. Voice đọc toàn bản tin trong một request và dùng word timestamps để căn cảnh/phụ đề; xem phần chất lượng ở cuối tài liệu.
 
 Chi phí hiện là **reservation theo cấu hình**, không phải hóa đơn thực tế. Mỗi lần gọi kể cả retry đều giữ reservation; lưu thêm usage/tokens nếu provider trả. Đặt các giá trị reserve đủ cao cho model, search tool và chất lượng ảnh đang dùng. `MAX_RUN_COST_USD` chặn khi tổng reservation vượt ngân sách; đặt `MAX_RUN_COST_USD=0` để tắt chặn local, vẫn ghi reservation/usage. Mặc định vẫn là 5 USD. Đây không phải giới hạn spend tuyệt đối tại nhà cung cấp. V1 chưa tự tải bảng giá hoặc tính chính xác search/image/TTS billing.
 
@@ -112,9 +112,10 @@ Mặc định `TELEGRAM_UPDATE_MODE=polling`: worker nhận lệnh bằng long p
 
 Muốn dùng webhook thì đặt `TELEGRAM_UPDATE_MODE=webhook`, restart API/worker và cấu hình webhook như dưới đây. Polling mode không nhận HTTP webhook.
 
-Đăng ký webhook qua Bot API `setWebhook` với HTTPS URL trỏ tới `/telegram/webhook` và `secret_token` đúng giá trị `.env`. Webhook ghi update vào inbox bền vững; worker xử lý theo `update_id`. Cần cả chat ID và user ID đúng whitelist. Commands luôn có run ID và revision:
+Đăng ký webhook qua Bot API `setWebhook` với HTTPS URL trỏ tới `/telegram/webhook` và `secret_token` đúng giá trị `.env`. Webhook ghi update vào inbox bền vững; worker xử lý theo `update_id`. Cần cả chat ID và user ID đúng whitelist. Lệnh `/gen-new-video` không cần tham số, tạo/lấy run trong ngày. Các command thao tác run cần ID và revision:
 
 ```text
+/gen-new-video
 /publish <runId> <revision>
 /regenerate <runId> <revision> script|voice|visuals|render
 /skip <runId> <revision>

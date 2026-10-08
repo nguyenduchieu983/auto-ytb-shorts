@@ -5,6 +5,7 @@ import { localDate } from './config';
 import { Work } from './domain';
 import { TelegramPolling } from './telegram-polling';
 import { parseTelegramUpdate } from './providers/telegram';
+import { handleTelegramCommand } from './telegram-commands';
 
 export class QueueRuntime {
   private connection: IORedis;
@@ -124,14 +125,7 @@ export class QueueRuntime {
         let message = '';
         try {
           const cmd = parseTelegramUpdate(row.payload, this.pipeline.c);
-          if (cmd.action === 'publish')
-            await this.pipeline.repo.publish(cmd.runId, cmd.revision, cmd.actor);
-          if (cmd.action === 'skip')
-            await this.pipeline.repo.skip(cmd.runId, cmd.revision, cmd.actor);
-          if (cmd.action === 'regenerate')
-            await this.pipeline.regenerate(cmd.runId, cmd.revision, cmd.target!);
-          const run = await this.pipeline.repo.get(cmd.runId);
-          message = `${run.id} revision ${run.revision}: ${run.status}`;
+          message = await handleTelegramCommand(this.pipeline, cmd);
           await lock.query("UPDATE telegram_updates SET status='DONE' WHERE update_id=$1", [
             row.update_id,
           ]);
