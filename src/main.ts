@@ -109,6 +109,7 @@ class PublicController {
   @Post('telegram/webhook') async webhook(@Req() req: any, @Body() body: any) {
     if (
       this.p.c.MOCK_TELEGRAM ||
+      this.p.c.TELEGRAM_UPDATE_MODE !== 'webhook' ||
       !equal(
         String(req.headers['x-telegram-bot-api-secret-token'] || ''),
         this.p.c.TELEGRAM_WEBHOOK_SECRET,

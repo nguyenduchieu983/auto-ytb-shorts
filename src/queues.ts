@@ -3,6 +3,7 @@ import IORedis from 'ioredis';
 import { Pipeline, safeError } from './engine';
 import { localDate } from './config';
 import { Work } from './domain';
+import { TelegramPolling } from './telegram-polling';
 import { parseTelegramUpdate } from './providers/telegram';
 
 export class QueueRuntime {
@@ -12,6 +13,7 @@ export class QueueRuntime {
   private timer?: NodeJS.Timeout;
   private pumping = false;
   private closing = false;
+  private polling?: TelegramPolling;
   constructor(private pipeline: Pipeline) {
     this.connection = new IORedis(pipeline.c.REDIS_URL, { maxRetriesPerRequest: null });
     this.queues = Object.fromEntries(
@@ -71,6 +73,10 @@ export class QueueRuntime {
         },
       );
     else await this.queues.daily.removeJobScheduler('daily-news-shorts');
+    if (!this.pipeline.c.MOCK_TELEGRAM && this.pipeline.c.TELEGRAM_UPDATE_MODE === 'polling') {
+      this.polling = new TelegramPolling(this.pipeline.c, this.pipeline.repo.pool);
+      this.polling.start();
+    }
     await this.pump();
     this.timer = setInterval(() => {
       this.pump().catch((e) => console.error(safeError(e, this.pipeline.c)));
@@ -146,6 +152,7 @@ export class QueueRuntime {
   async close() {
     this.closing = true;
     if (this.timer) clearInterval(this.timer);
+    await this.polling?.close();
     while (this.pumping) await new Promise((resolve) => setTimeout(resolve, 25));
     await Promise.all(this.workers.map((w) => w.close()));
     await Promise.all(Object.values(this.queues).map((q) => q.close()));

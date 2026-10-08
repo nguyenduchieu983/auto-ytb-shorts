@@ -37,6 +37,7 @@ const schema = z.object({
   GOOGLE_CLIENT_SECRET: z.string().default(''),
   YOUTUBE_REFRESH_TOKEN: z.string().default(''),
   YOUTUBE_PRIVACY_STATUS: z.enum(['private', 'unlisted', 'public']).default('private'),
+  TELEGRAM_UPDATE_MODE: z.enum(['polling', 'webhook']).default('polling'),
   TELEGRAM_BOT_TOKEN: z.string().default(''),
   TELEGRAM_ADMIN_CHAT_ID: z.string().default(''),
   TELEGRAM_ADMIN_USER_IDS: z.string().default(''),
@@ -66,9 +67,11 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     (!c.TELEGRAM_BOT_TOKEN ||
       !c.TELEGRAM_ADMIN_CHAT_ID ||
       !c.TELEGRAM_ADMIN_USER_IDS ||
-      c.TELEGRAM_WEBHOOK_SECRET.length < 32)
+      (c.TELEGRAM_UPDATE_MODE === 'webhook' && c.TELEGRAM_WEBHOOK_SECRET.length < 32))
   )
-    throw new Error('Telegram token, chat, users and webhook secret (32+ chars) are required');
+    throw new Error(
+      'Telegram token/chat/users are required; webhook mode also needs a secret of 32+ chars',
+    );
   if (c.AUTO_PUBLISH && (c.MOCK_OPENAI || c.MOCK_YOUTUBE || c.MOCK_TELEGRAM))
     throw new Error('AUTO_PUBLISH requires all live providers');
   return c;

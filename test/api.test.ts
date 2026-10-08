@@ -57,6 +57,7 @@ test('Native HTTP API authenticates admin, validates revisions and deduplicates 
 test('Telegram webhook durably deduplicates update IDs and rejects unauthorized users', async () => {
   const { repo, pool, c } = await setup();
   c.MOCK_TELEGRAM = false;
+  c.TELEGRAM_UPDATE_MODE = 'webhook';
   c.TELEGRAM_ADMIN_CHAT_ID = '10';
   c.TELEGRAM_ADMIN_USER_IDS = '20';
   c.TELEGRAM_WEBHOOK_SECRET = 'test-webhook-secret-32-characters-long';

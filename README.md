@@ -108,6 +108,10 @@ Chi phí hiện là **reservation theo cấu hình**, không phải hóa đơn t
 
 Tạo bot qua BotFather; đặt `TELEGRAM_BOT_TOKEN`, `TELEGRAM_ADMIN_CHAT_ID`, `TELEGRAM_ADMIN_USER_IDS` (ID user, phân cách bằng dấu phẩy), `TELEGRAM_WEBHOOK_SECRET` (ngẫu nhiên ít nhất 32 ký tự), `MOCK_TELEGRAM=false`.
 
+Mặc định `TELEGRAM_UPDATE_MODE=polling`: worker nhận lệnh bằng long polling ngay trên máy local, không cần domain, HTTPS public hoặc tunnel. Chạy cả API và worker; giữ máy bật và có internet. Worker tự bỏ webhook khi chuyển sang polling bằng `drop_pending_updates=false`, giữ các lệnh đang chờ. Log `Telegram polling ready` xác nhận receiver hoạt động; `Telegram update <id>: PENDING/REJECTED` ghi kết quả nhận. Inbox PostgreSQL chống trùng theo `update_id`, kiểm tra chat/user whitelist và xử lý tuần tự. Khi lỗi mạng, polling tự thử lại; không chạy một receiver khác cho cùng bot ở ứng dụng khác.
+
+Muốn dùng webhook thì đặt `TELEGRAM_UPDATE_MODE=webhook`, restart API/worker và cấu hình webhook như dưới đây. Polling mode không nhận HTTP webhook.
+
 Đăng ký webhook qua Bot API `setWebhook` với HTTPS URL trỏ tới `/telegram/webhook` và `secret_token` đúng giá trị `.env`. Webhook ghi update vào inbox bền vững; worker xử lý theo `update_id`. Cần cả chat ID và user ID đúng whitelist. Commands luôn có run ID và revision:
 
 ```text
