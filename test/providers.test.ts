@@ -250,7 +250,18 @@ test('Live narration preserves the source date for older news', async () => {
     item.older_than_24h = true;
   }
   const provider = new OpenAiProvider(c, repo, {} as any);
-  (provider as any).structured = async () => mockScript(news);
+  (provider as any).structured = async () => ({
+    ...mockScript(news),
+    hook: 'Tin mới',
+    segments: news.map((n) => ({
+      news_id: n.id,
+      narration: Array(33).fill('tin').join(' '),
+      headline: n.title,
+      key_takeaway: '',
+    })),
+    takeaway: '',
+    cta: 'Theo dõi',
+  });
   try {
     const output = await provider.script({ runId: 'test', revision: 1, step: 'script' }, news);
     for (const segment of output.segments) {
@@ -344,6 +355,89 @@ test('Strict URI compatibility keeps local URL validation', async () => {
     );
   } finally {
     globalThis.fetch = savedFetch;
+    await pool.end();
+  }
+});
+
+test('Script rewrites oversized narration and counts final fields instead of claimed full_script', async () => {
+  const { repo, pool, c } = await setup();
+  c.MOCK_OPENAI = false;
+  const news = mockNews(new Date()).slice(0, 1);
+  const provider = new OpenAiProvider(c, repo, {} as any);
+  let calls = 0;
+  const issues = { unsupported_claims: [{ claim: 'example', reason: 'unsupported' }] };
+  (provider as any).structured = async (_w: any, _name: any, _schema: any, input: any) => {
+    calls++;
+    assert.deepEqual(input.issues, issues);
+    if (calls === 2) {
+      assert.equal(input.narration_budget.previous_word_count, 387);
+      assert.equal(input.previous.full_script.split(/\s+/).length, 387);
+    }
+    return {
+      ...mockScript(news),
+      hook: 'Tin',
+      takeaway: '',
+      cta: '',
+      full_script: 'short misleading field',
+      segments: [
+        {
+          news_id: news[0].id,
+          narration: Array(calls === 1 ? 386 : 139)
+            .fill('tin')
+            .join(' '),
+          headline: '',
+          key_takeaway: '',
+        },
+      ],
+    };
+  };
+  try {
+    const result = await provider.script(
+      { runId: 'test', revision: 1, step: 'script' },
+      news,
+      undefined,
+      issues,
+    );
+    assert.equal(calls, 2);
+    assert.equal(result.full_script.split(/\s+/).length, 140);
+    assert.ok(result.estimated_duration_sec < 60);
+  } finally {
+    await pool.end();
+  }
+});
+
+test('Script stops after bounded attempts when narration is too short or too long', async () => {
+  const { repo, pool, c } = await setup();
+  c.MOCK_OPENAI = false;
+  const news = mockNews(new Date()).slice(0, 1);
+  const provider = new OpenAiProvider(c, repo, {} as any);
+  try {
+    for (const words of [10, 387]) {
+      let calls = 0;
+      (provider as any).structured = async () => {
+        calls++;
+        return {
+          ...mockScript(news),
+          hook: 'Tin',
+          takeaway: '',
+          cta: '',
+          segments: [
+            {
+              news_id: news[0].id,
+              narration: Array(words).fill('tin').join(' '),
+              headline: '',
+              key_takeaway: '',
+            },
+          ],
+        };
+      };
+      await assert.rejects(
+        provider.script({ runId: 'test', revision: 1, step: 'script' }, news),
+        /after 3 attempts/,
+      );
+      assert.equal(calls, 3);
+    }
+  } finally {
     await pool.end();
   }
 });

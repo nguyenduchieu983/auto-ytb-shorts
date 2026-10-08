@@ -9,6 +9,7 @@ import { Repository } from '../db';
 import {
   News,
   PermanentError,
+  ReviewError,
   Script,
   scriptSchema,
   storyboardSchema,
@@ -210,31 +211,58 @@ export class OpenAiProvider {
   }
   async script(w: Work, news: News[], previous?: Script, issues?: any): Promise<Script> {
     if (this.c.MOCK_OPENAI) return mockScript(news);
-    const script = await this.structured(w, 'script', scriptSchema, { news, previous, issues });
-    if (
-      new Set(script.segments.map((s) => s.news_id)).size !== news.length ||
-      !script.segments.every((s) => news.some((n) => n.id === s.news_id))
-    )
-      throw new Error('Script news IDs mismatch');
-    for (const segment of script.segments) {
-      const item = news.find((n) => n.id === segment.news_id)!;
-      if (item.older_than_24h && item.published_at) {
-        const [year, month, day] = item.published_at.slice(0, 10).split('-');
-        const date = `${day}/${month}/${year}`;
-        if (!segment.narration.includes(date))
-          segment.narration = `Theo thông tin công bố ngày ${date}, ${segment.narration}`;
+    // Count the final narration, including source-date prefixes, not the model's estimate.
+    const minWords = 120,
+      maxWords = 150;
+    let prior = previous;
+    let wordCount = 0;
+    for (let round = 0; round < 3; round++) {
+      const script = await this.structured(w, 'script', scriptSchema, {
+        news,
+        previous: prior,
+        issues,
+        narration_budget: {
+          min_words: minWords,
+          max_words: maxWords,
+          target_seconds: 55,
+          counting:
+            'Whitespace-separated tokens in hook + segment narrations + takeaway + CTA, including dates',
+          previous_word_count: round ? wordCount : undefined,
+        },
+      });
+      if (
+        script.segments.length !== news.length ||
+        new Set(script.segments.map((s) => s.news_id)).size !== news.length ||
+        !script.segments.every((s) => news.some((n) => n.id === s.news_id))
+      )
+        throw new Error('Script news IDs mismatch');
+      for (const segment of script.segments) {
+        const item = news.find((n) => n.id === segment.news_id)!;
+        if (item.older_than_24h && item.published_at) {
+          const [year, month, day] = item.published_at.slice(0, 10).split('-');
+          const date = `${day}/${month}/${year}`;
+          if (!segment.narration.includes(date))
+            segment.narration = `Theo thông tin công bố ngày ${date}, ${segment.narration}`;
+        }
       }
+      const full = [
+        script.hook,
+        ...script.segments.map((s) => s.narration),
+        script.takeaway,
+        script.cta,
+      ]
+        .filter(Boolean)
+        .join(' ');
+      wordCount = full.trim().split(/\s+/).length;
+      prior = { ...script, full_script: full };
+      if (wordCount >= minWords && wordCount <= maxWords)
+        return { ...prior, estimated_duration_sec: wordCount / 2.65 };
     }
-    const full = [
-      script.hook,
-      ...script.segments.map((s) => s.narration),
-      script.takeaway,
-      script.cta,
-    ]
-      .filter(Boolean)
-      .join(' ');
-    return { ...script, full_script: full };
+    throw new ReviewError(
+      `Script has ${wordCount} whitespace-separated words after 3 attempts; requires ${minWords}-${maxWords} before TTS`,
+    );
   }
+
   async verify(w: Work, news: News[], script: Script) {
     if (this.c.MOCK_OPENAI) return { unsupported_claims: [], needs_rewrite: false };
     return this.structured(w, 'verify-script', verificationSchema, { news, script });

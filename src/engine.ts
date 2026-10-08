@@ -108,10 +108,12 @@ export class Pipeline {
           break;
         case 'voice': {
           result = await this.ai.voice(w, dir, o.storyboard);
-          if (durationClass(result.duration) === 'fail')
+          if (durationClass(result.duration) === 'fail') {
+            await this.storage.json(dir, 'voice-rejected.json', result);
             throw new ReviewError(
               `Voice is ${result.duration.toFixed(1)}s; regenerate script to fit 40-65s envelope`,
             );
+          }
           break;
         }
         case 'visuals':
