@@ -407,22 +407,8 @@ export class NewsDiscoveryService {
     const sorted = this.deduplicate(items).sort(
       (a, b) => b.score - a.score || b.confidence - a.confidence,
     );
-    const selected: News[] = [];
-    // Prefer distinct companies/topics and two news + one tool when available.
-    for (const n of sorted) {
-      if (n.kind === 'tool' && selected.some((p) => p.kind === 'tool')) continue;
-      if (
-        selected.filter((p) => p.company === n.company).length >= 2 ||
-        selected.filter((p) => p.category === n.category).length >= 2
-      )
-        continue;
-      selected.push(n);
-      if (selected.length === 3) break;
-    }
-    for (const n of sorted) {
-      if (selected.length === 3) break;
-      if (!selected.some((s) => s.id === n.id)) selected.push(n);
-    }
+    // Dedup/novelty still inspect all candidates; the video develops one event.
+    const selected = sorted.slice(0, 1);
     this.counts.finalSelectedCount = selected.length;
     console.log(this.counts);
     if (!selected.length)

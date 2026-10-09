@@ -251,7 +251,7 @@ test('Expansion reconsiders early candidates at 48/72h and survives broken RSS f
     const output = await service.discover(w, now);
     assert.deepEqual(calls, [24, 48, 72]);
     assert.equal(output.items.length, 3);
-    assert.equal(service.selectTopNews(output.items).length, 3);
+    assert.equal(service.selectTopNews(output.items).length, 1);
   } finally {
     await pool.end();
   }
@@ -282,14 +282,18 @@ test('RSS fallback merges with web news; one broken feed does not abort others',
     await pool.end();
   }
 });
-test('Selection prefers two news plus a tool and retains partial valid results', async () => {
+test('Selection picks exactly one highest-ranked event with confidence tie-break', async () => {
   const { c, pool } = await setup();
   try {
     const service = new NewsDiscoveryService(c, {} as DiscoveryAI);
     const items = mockNews(now).slice(0, 3);
     items[2].kind = 'tool';
-    assert.equal(service.selectTopNews(items).length, 3);
-    assert.equal(service.selectTopNews(items.slice(0, 2)).length, 2);
+    items[2].score = 100;
+    assert.deepEqual(service.selectTopNews(items), [items[2]]);
+    items[0].score = 100;
+    items[2].confidence = 0.9;
+    assert.deepEqual(service.selectTopNews(items), [items[0]]);
+    assert.equal(service.selectTopNews(items.slice(0, 2)).length, 1);
     assert.equal(service.selectTopNews(items.slice(0, 1)).length, 1);
     assert.throws(() => service.selectTopNews([]), /NEWS_DISCOVERY_EMPTY/);
   } finally {

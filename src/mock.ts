@@ -54,7 +54,10 @@ export function mockNews(now: Date): News[] {
   }));
 }
 export function mockScript(news: News[]): Script {
-  const hook = 'Đây là bản demo bản tin AI và công nghệ, với dữ liệu mẫu để kiểm tra hệ thống.';
+  const hook =
+    news.length === 1
+      ? 'Đây là video demo giải thích một chủ đề công nghệ bằng dữ liệu mẫu.'
+      : 'Đây là bản demo bản tin AI và công nghệ, với dữ liệu mẫu để kiểm tra hệ thống.';
   const segments = news.map((n) => ({
     news_id: n.id,
     narration:

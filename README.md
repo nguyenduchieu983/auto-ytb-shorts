@@ -157,7 +157,7 @@ NEWS DISCOVERY dùng Responses API với Web Search live bắt buộc và contex
 
 Tự mở 24 → 48 → 72 giờ nếu dưới 5 tin; nếu vẫn dưới 5, bổ sung RSS/Atom từ 16 nguồn: OpenAI, Anthropic, Google AI, GitHub, Microsoft, NVIDIA, TechCrunch, The Verge, The Register, The New Stack, BleepingComputer, AWS Machine Learning, The Decoder, ZDNet, Hugging Face và VnExpress Công nghệ. Bộ lọc RSS nhận cả từ khóa AI/tech tiếng Anh và các cụm tiếng Việt như trí tuệ nhân tạo, lập trình, bảo mật. Mỗi feed lấy tối đa 5 mục phù hợp trong 72 giờ; chọn luân phiên từng mục giữa các nguồn rồi loại URL trùng, tối đa 30 trang mỗi lần fallback. Cách chọn này giúp nguồn mới được đọc dù các feed đứng đầu có nhiều bài. Các báo mới cũng được thêm vào ưu tiên web search/ranking; nguồn công bố chính thức vẫn có điểm ưu tiên cao hơn. Feed không tồn tại/lỗi được ghi log và bỏ qua. Ngày thiếu hoặc không parse được giữ null với date_parse_failed=true và freshness_hours=null; không giả làm tin mới. Tin cũ được ghi ngày nguồn. MAX_NEWS_AGE_HOURS đã được thay bằng flow cố định 24/48/72 theo yêu cầu.
 
-NewsDiscoveryService ghi raw response, source snapshots, extraction, lý do loại và counts vào storage/diagnostics/<runId>/rev-<revision>/discovery-<timestamp>/. API search/extraction lỗi có mã rõ; chỉ khi không còn tin hợp lệ mới SKIPPED. Chọn tối đa 3 tin; ưu tiên đa dạng và 2 news + 1 tool. Nếu chỉ có 1–2 tin hợp lệ, giữ số tin thực có và chờ duyệt thủ công; không tự tạo tin thứ ba. Auto-publish vẫn yêu cầu 3 tin có ngày nguồn.
+NewsDiscoveryService ghi raw response, source snapshots, extraction, lý do loại và counts vào storage/diagnostics/<runId>/rev-<revision>/discovery-<timestamp>/. API search/extraction lỗi có mã rõ; chỉ khi không còn tin hợp lệ mới SKIPPED. Mỗi video chọn đúng 1 sự kiện/tin/công cụ có điểm cao nhất sau kiểm tra nguồn và trùng sự kiện; confidence dùng để phân xử khi bằng điểm. Không ghép ba tin hoặc bù thêm tin. Auto-publish (opt-in) yêu cầu tin có ngày nguồn và tất cả QC đạt.
 
 Chạy acceptance live riêng discovery/rank, không tạo video hay gửi Telegram/YouTube:
 
@@ -167,7 +167,7 @@ npm.cmd run news:discover
 
 Lệnh in RAW SOURCES, EXTRACTED, AFTER DATE FILTER, AFTER DEDUP, AFTER SOURCE FILTER, FINAL SELECTED và top 3. Report + ledger reservation/usage lưu trong storage/discovery-live/latest.json. [Điều tra root cause](docs/news-discovery.md).
 
-Prompt nằm trong `prompts/*.md`. Chọn tối đa 3 tin thực có, kiểm tra trùng sự kiện với lịch sử 90 ngày. Voice đọc toàn bản tin trong một request và dùng word timestamps để căn cảnh/phụ đề; xem phần chất lượng ở cuối tài liệu.
+Prompt nằm trong `prompts/*.md`. Mỗi video mới chọn đúng 1 chủ đề, kiểm tra trùng sự kiện với lịch sử 90 ngày. Kịch bản dành toàn bộ 120–150 token tiếng Việt (mục tiêu 45–60 giây) để giải thích sự kiện, bối cảnh/cách hoạt động và tác động thực tế, với 2–3 chi tiết từ toàn bộ article evidence; ví dụ hoặc giới hạn chỉ dùng khi nguồn hỗ trợ. Hook và CTA ngắn, không dùng format roundup. Storyboard chia cùng chủ đề thành nhiều nhịp giải thích. Rank lưu format single-story; QC yêu cầu đúng một tin. Revision đã rank trước thay đổi giữ format cũ khi regenerate downstream; muốn đổi video cũ sang một chủ đề thì regenerate từ rank. Voice đọc toàn bản tin trong một request và dùng word timestamps để căn cảnh/phụ đề; xem phần chất lượng ở cuối tài liệu.
 
 Chi phí hiện là **reservation theo cấu hình**, không phải hóa đơn thực tế. Mỗi lần gọi kể cả retry đều giữ reservation; lưu thêm usage/tokens nếu provider trả. Đặt các giá trị reserve đủ cao cho model, search tool và chất lượng ảnh đang dùng. `MAX_RUN_COST_USD` chặn khi tổng reservation vượt ngân sách; đặt `MAX_RUN_COST_USD=0` để tắt chặn local, vẫn ghi reservation/usage. Mặc định vẫn là 5 USD. Đây không phải giới hạn spend tuyệt đối tại nhà cung cấp. V1 chưa tự tải bảng giá hoặc tính chính xác search/image/TTS billing.
 
@@ -219,7 +219,7 @@ Chỉ bật auto-publish sau giai đoạn review ổn định: tất cả provid
 
 ## Kiểm tra và giới hạn nghiệm thu
 
-`npm run check`: TypeScript build và tests cho timezone, dedup/diversity, source parsing, subtitle, revision/approval, dependency join, cost budget và upload gates. Tests DB mặc định dùng pg-mem, không chứng minh được transaction/row locking của PostgreSQL thật. `npm run demo` kiểm tra FFmpeg/ffprobe và toàn bộ mock flow.
+`npm run check`: TypeScript build và tests cho timezone, dedup/selection, source parsing, subtitle, revision/approval, dependency join, cost budget và upload gates. Tests DB mặc định dùng pg-mem, không chứng minh được transaction/row locking của PostgreSQL thật. `npm run demo` kiểm tra FFmpeg/ffprobe và toàn bộ mock flow.
 
 Khi PostgreSQL/Redis đã kết nối: `npm run test:redis` kiểm tra retry/dedup BullMQ bằng namespace riêng; `npm run test:native` chạy full mock pipeline trên PostgreSQL/Redis thật, kiểm tra 8 trigger đồng thời, lease hết hạn, regenerate voice/tái sử dụng visuals, từ chối approval cũ và 8 yêu cầu publish đồng thời. Test native tạo run với ngày thử nghiệm xa tương lai để không chiếm run hôm nay, giữ assets/log để audit và ghi `storage/native-latest.json`. Chỉ chạy khi tất cả provider mock và scheduler/auto-publish tắt. Test native tự đóng API/worker của lượt test khi xong; không xóa dữ liệu dự án. Test HTTP cần quyền kết nối localhost, nếu môi trường sandbox chặn socket thì chạy ở terminal máy.
 

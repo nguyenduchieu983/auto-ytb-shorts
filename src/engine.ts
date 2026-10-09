@@ -86,6 +86,7 @@ export class Pipeline {
           result = {
             items: scored,
             selected: discovery.selectTopNews(scored),
+            format: 'single-story',
             diagnostics: discovery.counts,
             novelty: novelty.decisions,
           };
@@ -143,10 +144,12 @@ export class Pipeline {
         case 'qc': {
           const technical = await this.media.validate(o.render, o.subtitles, claim.run.mock);
           const news = o.rank.selected as News[];
+          // Previously ranked revisions keep their original format when regenerated downstream.
+          const singleStory = o.rank.format === 'single-story';
           const checks = {
             ...technical.checks,
             verified: o.verify.verified === true,
-            news_count: news.length >= 1 && news.length <= 3,
+            news_count: singleStory ? news.length === 1 : news.length >= 1 && news.length <= 3,
             sources: news.every((n) => n.url && n.evidence),
             unique_sources: dedupNews(news).length === news.length,
             visual_coverage:
@@ -172,7 +175,7 @@ export class Pipeline {
               score >= 85 &&
               technical.duration_class === 'pass' &&
               !claim.run.mock &&
-              news.length === 3 &&
+              news.length === (singleStory ? 1 : 3) &&
               news.every((n) => n.published_at !== null),
           };
           if (!hard_pass) {

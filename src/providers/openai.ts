@@ -415,6 +415,17 @@ export class OpenAiProvider {
     for (let round = 0; round < 3; round++) {
       const script = await this.structured(w, 'script', scriptSchema, {
         news,
+        editorial_brief: {
+          format: news.length === 1 ? 'single-story-explainer' : 'legacy-roundup',
+          structure: [
+            'what happened',
+            'how it works / supported context',
+            'practical impact',
+            'supported limitation or caveat',
+          ],
+          grounding:
+            'Use the full supplied article evidence. Explain concrete details, never invent missing facts or pad with generic commentary.',
+        },
         previous: prior,
         issues,
         narration_budget: {

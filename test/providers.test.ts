@@ -369,6 +369,9 @@ test('Script rewrites oversized narration and counts final fields instead of cla
   (provider as any).structured = async (_w: any, _name: any, _schema: any, input: any) => {
     calls++;
     assert.deepEqual(input.issues, issues);
+    assert.equal(input.editorial_brief.format, 'single-story-explainer');
+    assert.equal(input.news.length, 1);
+    assert.equal(input.news[0].evidence, news[0].evidence);
     if (calls === 2) {
       assert.equal(input.narration_budget.previous_word_count, 387);
       assert.match(input.narration_budget.correction, /REMOVE AT LEAST 257 tokens/);
@@ -451,7 +454,6 @@ test('Upload network diagnostics retain safe cause codes without leaking session
   assert.match(uploadNetworkError('chunk transfer', error).message, /ECONNRESET/);
   assert.ok(!uploadNetworkError('chunk transfer', error).message.includes('secret'));
 });
-
 
 test('YouTube PUT derives correct byte lengths with the application Cheerio/Undici dispatcher', async () => {
   await import('cheerio');

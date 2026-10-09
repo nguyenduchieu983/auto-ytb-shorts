@@ -54,6 +54,16 @@ async function main() {
   const detail = await repo.detail(run.id),
     render = detail.steps.find((s) => s.step === 'render')?.output,
     qc = detail.steps.find((s) => s.step === 'qc')?.output;
+  const rank = detail.steps.find((s) => s.step === 'rank')?.output,
+    script = detail.steps.find((s) => s.step === 'script')?.output;
+  if (
+    rank?.format !== 'single-story' ||
+    rank.selected.length !== 1 ||
+    script?.segments.length !== 1 ||
+    script.segments[0].news_id !== rank.selected[0].id ||
+    !qc?.hard_pass
+  )
+    throw new Error('Single-topic demo failed selection, script or media QC');
   if (detail.status !== 'UPLOADED_PRIVATE')
     throw new Error(`Mock upload did not finish: ${detail.status}`);
   await writeFile(join(c.STORAGE_ROOT, 'demo-latest.json'), JSON.stringify(detail, null, 2));

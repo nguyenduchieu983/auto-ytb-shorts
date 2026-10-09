@@ -17,7 +17,7 @@ const names = {
 };
 const descriptions = {
   discover: 'Tìm web, đọc bài nguồn và RSS dự phòng',
-  rank: 'Xếp hạng, so sự kiện và chọn tối đa 3 tin',
+  rank: 'Xếp hạng, so sự kiện và chọn 1 chủ đề cho video',
   script: 'Viết lời đọc tiếng Việt theo ngân sách thời lượng',
   verify: 'Đối chiếu các claims với bằng chứng nguồn',
   storyboard: 'Chia lời thành cảnh, thiết kế hình cho từng nhịp',

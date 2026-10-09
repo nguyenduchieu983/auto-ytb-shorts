@@ -217,30 +217,11 @@ export function dedupNews(items: News[], previous: News[] = []): News[] {
   return result;
 }
 export function selectNews(items: News[]): News[] {
-  const selected: News[] = [];
-  for (const n of [...items].filter((n) => n.confidence >= 0.8).sort((a, b) => b.score - a.score)) {
-    if (n.kind === 'tool') continue;
-    if (
-      selected.filter((p) => p.company === n.company).length >= 2 ||
-      selected.filter((p) => p.category === n.category).length >= 2
-    )
-      continue;
-    selected.push(n);
-    if (selected.length === 3) return selected;
-  }
-  if (selected.length === 2) {
-    const tool = items
-      .filter((n) => n.kind === 'tool' && n.confidence >= 0.8)
-      .sort((a, b) => b.score - a.score)
-      .find(
-        (n) =>
-          selected.filter((p) => p.company === n.company).length < 2 &&
-          selected.filter((p) => p.category === n.category).length < 2,
-      );
-    if (tool) selected.push(tool);
-  }
-  if (selected.length !== 3)
-    throw new SkipError('Insufficient verified news: need 3 news or 2 news + 1 verified tool');
+  const selected = [...items]
+    .filter((n) => n.confidence >= 0.8)
+    .sort((a, b) => b.score - a.score || b.confidence - a.confidence)
+    .slice(0, 1);
+  if (!selected.length) throw new SkipError('Insufficient verified news: need one sourced topic');
   return selected;
 }
 export function durationClass(seconds: number): 'pass' | 'review' | 'fail' {

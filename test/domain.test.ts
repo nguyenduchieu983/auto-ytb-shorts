@@ -30,17 +30,19 @@ test('Dedup preserves stronger source and removes previously published stories',
   assert.equal(dedupNews([weak, strong])[0].url, strong.url);
   assert.equal(dedupNews([strong], [weak]).length, 0);
 });
-test('Selection observes diversity and sourced tool fallback', () => {
+test('Selection picks one strongest verified topic, including a tool, without filling a roundup', () => {
   const items = mockNews(new Date());
   items.forEach((n) => {
     n.company = 'same';
     n.category = 'same';
   });
-  assert.throws(() => selectNews(items));
-  items[2].company = 'other';
-  items[2].category = 'other';
+  assert.deepEqual(selectNews(items), [items[0]]);
   items[2].kind = 'tool';
-  assert.equal(selectNews(items).length, 3);
+  items[2].score = 100;
+  assert.deepEqual(selectNews(items), [items[2]]);
+  items[2].confidence = 0.7;
+  assert.deepEqual(selectNews(items), [items[0]]);
+  assert.throws(() => selectNews([]));
 });
 test('Regeneration invalidates dependent media, QC and upload', () => {
   const d = descendants('voice');
