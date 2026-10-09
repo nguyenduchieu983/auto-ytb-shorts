@@ -238,6 +238,17 @@ Storyboard chia lời bằng code thành khoảng 10 nhịp, AI chỉ thiết k�
 
 Chống trùng gồm canonical URL/tiêu đề và kiểm tra **cùng sự kiện** bằng model trước khi rank. Lịch sử 90 ngày lấy đúng `rank.selected` của revision hiện tại ở video đã upload/public hoặc đang chờ duyệt/upload (kể cả upload chưa rõ kết quả); bỏ mock, skipped/failed và chính run đang tạo lại. Khác báo, URL hay cách giật title vẫn bị loại nếu cùng sự kiện. Follow-up chỉ giữ khi có diễn biến mới cụ thể. Quyết định/lý do nằm trong `rank/novelty.json`. Đây là phân loại có thể sai, không cam kết loại trùng tuyệt đối; giữ duyệt thủ công. Telegram chống xử lý trùng theo `update_id`; mỗi tin nhắn mới được tạo run riêng. Approval/upload vẫn idempotent theo run và revision.
 
+Novelty và chấm điểm chạy theo nhóm tối đa 8 tin; schema ràng buộc số lượng kết quả
+và ID được phép. Kiểm tra local vẫn chặn ID lặp/lạ, điểm ngoài khoảng và tham chiếu
+duplicate/update tới chính nó hoặc tin đứng sau. Giữ kết quả hợp lệ và chỉ hỏi lại
+các ID chưa đủ, tối đa 3 lượt mỗi nhóm. Novelty giữ toàn bộ ngữ cảnh và thứ tự ứng
+viên để phát hiện trùng xuyên nhóm; chấm điểm dùng metadata/summary, không gửi lại
+toàn bộ article evidence. Phản hồi cùng input lưu trong
+`storage/diagnostics/<runId>/rev-<revision>/news-novelty-*.json` và `news-rank-*.json`,
+kể cả JSON sai schema. Logs ghi số tin đã kiểm tra và ID chưa đủ. Hết số lượt vẫn
+thiếu thì FAILED để retry sau, không coi đó là lỗi nội dung cần viết lại và không
+tự gán điểm hay bỏ qua kiểm tra trùng.
+
 Tạo preview cải tiến từ tin đã chọn của một run, **không sửa run, không gửi Telegram, không upload**:
 
 ```powershell

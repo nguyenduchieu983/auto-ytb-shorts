@@ -24,6 +24,15 @@ import { alignNarration } from '../narration';
 import { Media, VoiceOutput, VisualOutput } from '../media';
 import { mockNews, mockScript, mockStoryboard } from '../mock';
 
+class StructuredOutputError extends Error {
+  constructor(
+    public value: unknown,
+    name: string,
+  ) {
+    super(`Invalid structured output for ${name}`);
+  }
+}
+
 function removeUriFormats(schema: any): void {
   if (!schema || typeof schema !== 'object') return;
   // OpenAI strict outputs reject JSON Schema's URI format. Zod still validates
@@ -150,11 +159,86 @@ export class OpenAiProvider {
       },
       this.c.TEXT_CALL_RESERVE_USD,
     );
-    try {
-      return schema.parse(JSON.parse(this.outputText(r)));
-    } catch {
-      throw new Error(`Invalid structured output for ${name}`);
+    const text = this.outputText(r);
+    if (name === 'news-novelty' || name === 'news-rank') {
+      const dir = join(this.c.STORAGE_ROOT, 'diagnostics', w.runId, `rev-${w.revision}`);
+      await mkdir(dir, { recursive: true });
+      await writeFile(
+        join(dir, `${name}-${Date.now()}-${Math.random().toString(16).slice(2)}.json`),
+        JSON.stringify({ response: r, input }, null, 2),
+      );
     }
+    let value: unknown;
+    try {
+      value = JSON.parse(text);
+    } catch {
+      throw new StructuredOutputError(undefined, name);
+    }
+    const parsed = schema.safeParse(value);
+    if (!parsed.success) throw new StructuredOutputError(value, name);
+    return parsed.data as z.infer<T>;
+  }
+
+  private async collectNewsResults<T extends z.ZodRawShape>(
+    w: Work,
+    name: 'news-novelty' | 'news-rank',
+    key: 'decisions' | 'scores',
+    items: News[],
+    shape: T,
+    input: (pending: News[]) => object,
+    valid: (row: z.infer<z.ZodObject<T>> & { id: string }) => boolean = () => true,
+  ) {
+    const result = new Map<string, z.infer<z.ZodObject<T>> & { id: string }>();
+    const rowSchema = z.object({ ...shape, id: z.string() });
+    for (let offset = 0; offset < items.length; offset += 8) {
+      const batch = items.slice(offset, offset + 8);
+      for (let attempt = 1; attempt <= 3; attempt++) {
+        const pending = batch.filter((n) => !result.has(n.id));
+        if (!pending.length) break;
+        const ids = pending.map((n) => n.id) as [string, ...string[]];
+        let response: any;
+        try {
+          response = await this.structured(
+            w,
+            name,
+            z.object({
+              [key]: z.array(z.object({ ...shape, id: z.enum(ids) })).length(ids.length),
+            }),
+            {
+              ...input(pending),
+              expected_ids: ids,
+              instruction: `Return exactly one ${key === 'scores' ? 'score' : 'decision'} for EACH expected_id. Do not return history IDs, other candidates or only top items.`,
+            },
+          );
+        } catch (error) {
+          if (!(error instanceof StructuredOutputError)) throw error;
+          response = error.value;
+        }
+        const rows = Array.isArray(response?.[key]) ? response[key] : [];
+        const counts = new Map<string, number>();
+        for (const row of rows)
+          if (typeof row?.id === 'string') counts.set(row.id, (counts.get(row.id) || 0) + 1);
+        for (const row of rows) {
+          const parsed = rowSchema.safeParse(row);
+          if (!parsed.success) continue;
+          const value = parsed.data as z.infer<z.ZodObject<T>> & { id: string };
+          if (!ids.includes(value.id) || counts.get(value.id) !== 1) continue;
+          if (valid(value)) result.set(value.id, value);
+        }
+        const missing = batch.filter((n) => !result.has(n.id)).map((n) => n.id);
+        await this.repo.log?.(
+          w,
+          `${name}: batch ${Math.floor(offset / 8) + 1}, pass ${attempt}/3; accepted ${batch.length - missing.length}/${batch.length}` +
+            (missing.length ? `; unresolved IDs: ${missing.join(', ')}` : ''),
+          missing.length ? 'warn' : 'info',
+        );
+        if (attempt === 3 && missing.length)
+          throw new PermanentError(
+            `${name} incomplete after 3 passes; unresolved IDs: ${missing.join(', ')}; inspect diagnostics`,
+          );
+      }
+    }
+    return items.map((n) => result.get(n.id)!);
   }
   newsDiscovery(loader?: DocumentLoader): NewsDiscoveryService {
     return new NewsDiscoveryService(
@@ -205,63 +289,70 @@ export class OpenAiProvider {
       published_at: n.published_at,
       url: n.url,
     });
-    const result = await this.structured(
+    const order = new Map(items.map((n, i) => [n.id, i]));
+    const historyIds = new Set(previous.map((n) => n.id));
+    const decisions = await this.collectNewsResults(
       w,
       'news-novelty',
-      z.object({
-        decisions: z.array(
-          z.object({
-            id: z.string(),
-            decision: z.enum(['new', 'update', 'duplicate']),
-            matched_id: z.string().nullable(),
-            reason: z.string().min(1),
-          }),
-        ),
+      'decisions',
+      items,
+      {
+        id: z.string(),
+        decision: z.enum(['new', 'update', 'duplicate']),
+        matched_id: z.string().nullable(),
+        reason: z.string().min(1),
+      },
+      (pending) => ({
+        candidates: pending.map(compact),
+        history: previous.map(compact),
+        candidate_context: items.map(compact),
+        candidate_order: items.map((n) => n.id),
       }),
-      { candidates: items.map(compact), history: previous.map(compact) },
+      (d) =>
+        d.decision === 'new'
+          ? d.matched_id === null
+          : !!d.matched_id &&
+            (historyIds.has(d.matched_id) ||
+              (order.has(d.matched_id) && order.get(d.matched_id)! < order.get(d.id)!)),
     );
-    const seen = new Set(previous.map((n) => n.id));
-    if (
-      result.decisions.length !== items.length ||
-      new Set(result.decisions.map((d) => d.id)).size !== items.length
-    )
-      throw new ReviewError('Incomplete event novelty check');
     const accepted: News[] = [];
     for (const n of items) {
-      const d = result.decisions.find((d) => d.id === n.id);
-      if (!d || (d.decision !== 'new' && (!d.matched_id || !seen.has(d.matched_id))))
-        throw new ReviewError('Invalid event novelty reference');
+      const d = decisions.find((d) => d.id === n.id)!;
       if (d.decision !== 'duplicate') accepted.push(n);
-      seen.add(n.id);
     }
-    return { items: accepted, decisions: result.decisions };
+    return { items: accepted, decisions };
   }
   async rank(w: Work, items: News[]): Promise<News[]> {
     if (this.c.MOCK_OPENAI) return items;
-    const scores = await this.structured(
+    const scores = await this.collectNewsResults(
       w,
       'news-rank',
-      z.object({
-        scores: z.array(
-          z.object({
-            id: z.string(),
-            novelty: z.number().min(0).max(25),
-            developer_interest: z.number().min(0).max(25),
-            mass_appeal: z.number().min(0).max(20),
-            practical_value: z.number().min(0).max(20),
+      'scores',
+      items,
+      {
+        id: z.string(),
+        novelty: z.number().min(0).max(25),
+        developer_interest: z.number().min(0).max(25),
+        mass_appeal: z.number().min(0).max(20),
+        practical_value: z.number().min(0).max(20),
+      },
+      (pending) => ({
+        items: pending.map(
+          ({ id, title, summary, company, category, kind, published_at, why_it_matters }) => ({
+            id,
+            title,
+            summary,
+            company,
+            category,
+            kind,
+            published_at,
+            why_it_matters,
           }),
         ),
       }),
-      { items },
     );
-    if (
-      scores.scores.length !== items.length ||
-      new Set(scores.scores.map((s) => s.id)).size !== items.length
-    )
-      throw new Error('Incomplete ranking');
     return items.map((n) => {
-      const s = scores.scores.find((s) => s.id === n.id);
-      if (!s) throw new Error('Missing rank');
+      const s = scores.find((s) => s.id === n.id)!;
       return { ...n, score: s.novelty + s.developer_interest + s.mass_appeal + s.practical_value };
     });
   }

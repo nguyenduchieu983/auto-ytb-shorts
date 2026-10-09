@@ -54,6 +54,7 @@ test('Event novelty removes cross-publisher repeats but retains a concrete new u
   const news = mockNews(new Date()).slice(0, 3);
   const previous = [{ ...news[0], id: 'old' }];
   const provider = new OpenAiProvider(c, repo, {} as any);
+  const runId = (await repo.create('2026-10-09', false)).id;
   (provider as any).structured = async () => ({
     decisions: [
       {
@@ -73,7 +74,7 @@ test('Event novelty removes cross-publisher repeats but retains a concrete new u
   });
   try {
     const result = await provider.filterRepeatedNews(
-      { runId: 'x', revision: 1, step: 'rank' },
+      { runId, revision: 1, step: 'rank' },
       news,
       previous,
     );
@@ -83,8 +84,8 @@ test('Event novelty removes cross-publisher repeats but retains a concrete new u
     );
     (provider as any).structured = async () => ({ decisions: [] });
     await assert.rejects(
-      provider.filterRepeatedNews({ runId: 'x', revision: 1, step: 'rank' }, news, previous),
-      /Incomplete/,
+      provider.filterRepeatedNews({ runId, revision: 1, step: 'rank' }, news, previous),
+      /incomplete after 3 passes/,
     );
   } finally {
     await pool.end();
@@ -113,6 +114,129 @@ test('History uses current rank snapshot including carried-forward revision and 
     assert.equal(carried[0].id, 'current-revision-news');
     await pool.query("UPDATE daily_runs SET status='SKIPPED' WHERE id=$1", [run.id]);
     assert.equal((await repo.previousNews('00000000-0000-0000-0000-000000000000')).length, 0);
+  } finally {
+    await pool.end();
+  }
+});
+
+test('Ranking repairs only unresolved IDs, rejects duplicate/unknown IDs and invalid scores, and saves responses', async () => {
+  const { c, repo, pool } = await setup();
+  c.MOCK_OPENAI = false;
+  const news = mockNews(new Date()).slice(0, 3);
+  const provider = new OpenAiProvider(c, repo, {} as any);
+  const requests: string[][] = [];
+  const score = (id: string) => ({
+    id,
+    novelty: 20,
+    developer_interest: 20,
+    mass_appeal: 15,
+    practical_value: 15,
+  });
+  (provider as any).request = async (_w: any, _endpoint: string, body: any) => {
+    const input = JSON.parse(body.input);
+    requests.push(input.expected_ids);
+    assert.ok(input.items.every((n: any) => n.evidence === undefined));
+    const schema = body.text.format.schema.properties.scores;
+    assert.equal(schema.minItems, input.expected_ids.length);
+    assert.equal(schema.maxItems, input.expected_ids.length);
+    assert.deepEqual(schema.items.properties.id.enum, input.expected_ids);
+    const scores =
+      requests.length === 1
+        ? [score(news[0].id), score(news[1].id), score(news[1].id), score('unknown')]
+        : requests.length === 2
+          ? [score(news[1].id), { ...score(news[2].id), novelty: 100 }]
+          : [score(news[2].id)];
+    return { output: [{ content: [{ type: 'output_text', text: JSON.stringify({ scores }) }] }] };
+  };
+  const runId = (await repo.create('2026-10-09', false)).id;
+  try {
+    const result = await provider.rank({ runId, revision: 1, step: 'rank' }, news);
+    assert.deepEqual(
+      result.map((n) => n.id),
+      news.map((n) => n.id),
+    );
+    assert.ok(result.every((n) => n.score === 70));
+    assert.deepEqual(requests, [
+      news.map((n) => n.id),
+      news.slice(1).map((n) => n.id),
+      [news[2].id],
+    ]);
+    const { readdir, readFile } = await import('node:fs/promises');
+    const { join } = await import('node:path');
+    const dir = join(c.STORAGE_ROOT, 'diagnostics', runId, 'rev-1');
+    const files = await readdir(dir);
+    assert.equal(files.length, 3);
+    assert.ok(
+      (await Promise.all(files.map((f) => readFile(join(dir, f), 'utf8')))).some((text) =>
+        text.includes('unknown'),
+      ),
+    );
+  } finally {
+    await pool.end();
+  }
+});
+
+test('Novelty preserves full candidate order across batches and repairs invalid backward references', async () => {
+  const { c, repo, pool } = await setup();
+  c.MOCK_OPENAI = false;
+  const base = mockNews(new Date())[0];
+  const news = Array.from({ length: 17 }, (_, i) => ({ ...base, id: `candidate-${i}` }));
+  const provider = new OpenAiProvider(c, repo, {} as any);
+  const runId = (await repo.create('2026-10-09', false)).id;
+  const requests: string[][] = [];
+  (provider as any).structured = async (_w: any, _name: string, _schema: any, input: any) => {
+    requests.push(input.expected_ids);
+    assert.deepEqual(
+      input.candidate_order,
+      news.map((n) => n.id),
+    );
+    assert.equal(input.candidate_context.length, 17);
+    return {
+      decisions: input.candidates.map((n: any) => ({
+        id: n.id,
+        decision: n.id === 'candidate-8' ? 'duplicate' : 'new',
+        matched_id:
+          n.id === 'candidate-8' ? (requests.length === 2 ? 'candidate-16' : 'candidate-0') : null,
+        reason: 'Fixture event comparison',
+      })),
+    };
+  };
+  try {
+    const result = await provider.filterRepeatedNews(
+      { runId, revision: 1, step: 'rank' },
+      news,
+      [],
+    );
+    assert.deepEqual(
+      requests.map((ids) => ids.length),
+      [8, 8, 1, 1],
+    );
+    assert.deepEqual(requests[2], ['candidate-8']);
+    assert.equal(result.decisions.length, 17);
+    assert.equal(result.items.length, 16);
+    assert.ok(!result.items.some((n) => n.id === 'candidate-8'));
+  } finally {
+    await pool.end();
+  }
+});
+
+test('Ranking stops after three incomplete responses without fabricating scores', async () => {
+  const { c, repo, pool } = await setup();
+  c.MOCK_OPENAI = false;
+  const news = mockNews(new Date()).slice(0, 2);
+  const provider = new OpenAiProvider(c, repo, {} as any);
+  const runId = (await repo.create('2026-10-09', false)).id;
+  let calls = 0;
+  (provider as any).structured = async () => {
+    calls++;
+    return { scores: [] };
+  };
+  try {
+    await assert.rejects(
+      provider.rank({ runId, revision: 1, step: 'rank' }, news),
+      /incomplete after 3 passes; unresolved IDs/,
+    );
+    assert.equal(calls, 3);
   } finally {
     await pool.end();
   }
