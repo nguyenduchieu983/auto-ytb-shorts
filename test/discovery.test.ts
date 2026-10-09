@@ -14,6 +14,7 @@ import {
   sourceAllowed,
   snapshot,
   publicAddress,
+  fallbackFeeds,
 } from '../src/news/sources';
 import { mockNews } from '../src/mock';
 
@@ -291,6 +292,57 @@ test('Selection prefers two news plus a tool and retains partial valid results',
     assert.equal(service.selectTopNews(items.slice(0, 2)).length, 2);
     assert.equal(service.selectTopNews(items.slice(0, 1)).length, 1);
     assert.throws(() => service.selectTopNews([]), /NEWS_DISCOVERY_EMPTY/);
+  } finally {
+    await pool.end();
+  }
+});
+
+test('RSS page budget still reaches added sources when every feed has five eligible articles', async () => {
+  const { c, pool } = await setup();
+  const pages: string[] = [];
+  const service = new NewsDiscoveryService(
+    c,
+    {
+      search: async () => searchResponse([]),
+      rank: async (_w, items) => items,
+      extract: async (_w, input: any) => ({
+        items: input.sources.map((s: any, i: number) => extracted(s.url, i)),
+      }),
+    },
+    async (url) => {
+      if (url.includes('/story-')) {
+        pages.push(url);
+        return { url, body: article, contentType: 'text/html' };
+      }
+      const feedIndex = fallbackFeeds.findIndex((f) => f.url === url);
+      assert.ok(feedIndex >= 0);
+      return {
+        url,
+        contentType: 'application/rss+xml',
+        body: `<rss><channel>${Array.from({ length: 5 }, (_, i) => `<item><title>${url.includes('vnexpress.net') ? 'Công cụ trí tuệ nhân tạo mới' : 'New AI developer agent'} ${i}</title><link>${new URL(url).origin}/feed-${feedIndex}/story-${i}</link><pubDate>Wed, 07 Oct 2026 10:00:00 GMT</pubDate></item>`).join('')}</channel></rss>`,
+      };
+    },
+  );
+  try {
+    await service.searchWithFallbackFeeds(w, now);
+    assert.equal(pages.length, 30);
+    for (const source of [
+      'The Register',
+      'The New Stack',
+      'BleepingComputer',
+      'AWS Machine Learning',
+      'The Decoder',
+      'ZDNet',
+      'Hugging Face',
+      'VnExpress Công nghệ',
+    ]) {
+      const index = fallbackFeeds.findIndex((f) => f.source === source);
+      assert.ok(
+        pages.some((url) => url.includes(`/feed-${index}/story-`)),
+        `${source} must not be starved by earlier feeds`,
+      );
+    }
+    assert.equal(new Set(pages).size, 30);
   } finally {
     await pool.end();
   }

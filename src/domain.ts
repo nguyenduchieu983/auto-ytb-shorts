@@ -190,14 +190,14 @@ export function similarity(a: string, b: string): number {
 export function sourceQuality(n: News): number {
   const host = new URL(n.url).hostname.replace(/^www\./, '');
   if (
-    /(^|\.)(openai\.com|anthropic\.com|google\.com|blog\.google|deepmind\.google|microsoft\.com|github\.com|github\.blog|nvidia\.com|amd\.com|aws\.amazon\.com|cloudflare\.com|meta\.com)$/.test(
+    /(^|\.)(openai\.com|anthropic\.com|google\.com|blog\.google|deepmind\.google|microsoft\.com|github\.com|github\.blog|nvidia\.com|amd\.com|aws\.amazon\.com|cloudflare\.com|meta\.com|huggingface\.co)$/.test(
       host,
     )
   )
     return 10;
   if (/(^|\.)(reuters\.com|apnews\.com)$/.test(host)) return 9;
   if (
-    /(^|\.)(techcrunch\.com|theverge\.com|venturebeat\.com|arstechnica\.com|thenewstack\.io|bleepingcomputer\.com)$/.test(
+    /(^|\.)(techcrunch\.com|theverge\.com|venturebeat\.com|arstechnica\.com|thenewstack\.io|bleepingcomputer\.com|theregister\.com|the-decoder\.com|zdnet\.com|vnexpress\.net)$/.test(
       host,
     )
   )

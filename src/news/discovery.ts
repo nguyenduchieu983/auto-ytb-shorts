@@ -255,28 +255,31 @@ export class NewsDiscoveryService {
     await this.begin(w);
     await this.log?.(w, 'Reading fallback RSS/Atom feeds');
     const feedLogs: any[] = [];
-    const entries = (
-      await mapLimited(fallbackFeeds, async (feed) => {
-        try {
-          const document = await this.load(feed.url);
-          const all = parseFeed(document.body, document.url, feed.source);
-          const selected = all
-            .filter((e) =>
-              /\b(ai|llm|model|agent|code|coding|developer|api|cyber|security|robot|chip|gpu|cloud|infrastructure|software|open.source)\b/i.test(
-                e.title + ' ' + e.summary,
-              ),
-            )
-            .filter(
-              (e) => !e.published_at || now.getTime() - Date.parse(e.published_at) <= 72 * 3600000,
-            )
-            .slice(0, 5);
-          feedLogs.push({ ...feed, parsed: all.length, candidates: selected.length });
-          return selected;
-        } catch (error) {
-          feedLogs.push({ ...feed, error: error instanceof Error ? error.message : 'feed_failed' });
-          return [];
-        }
-      })
+    const groups = await mapLimited(fallbackFeeds, async (feed) => {
+      try {
+        const document = await this.load(feed.url);
+        const all = parseFeed(document.body, document.url, feed.source);
+        const selected = all
+          .filter((e) =>
+            /\b(ai|llm|model|agent|code|coding|developer|api|cyber|security|robot|chip|gpu|cloud|infrastructure|software|open.source)\b|trí tuệ nhân tạo|lập trình|bảo mật|an ninh mạng|điện toán đám mây|mã nguồn mở|phần mềm|bán dẫn/i.test(
+              e.title + ' ' + e.summary,
+            ),
+          )
+          .filter(
+            (e) => !e.published_at || now.getTime() - Date.parse(e.published_at) <= 72 * 3600000,
+          )
+          .slice(0, 5);
+        feedLogs.push({ ...feed, parsed: all.length, candidates: selected.length });
+        return selected;
+      } catch (error) {
+        feedLogs.push({ ...feed, error: error instanceof Error ? error.message : 'feed_failed' });
+        return [];
+      }
+    });
+    // Share the existing 30-page budget across sources rather than exhausting
+    // it on the first feeds and never reaching newly added publishers.
+    const entries = Array.from({ length: 5 }, (_, index) =>
+      groups.flatMap((group) => (group[index] ? [group[index]] : [])),
     ).flat();
     const unique = [...new Map(entries.map((e) => [e.url, e])).values()].slice(0, 30);
     this.counts.feedSourcesCount = unique.length;

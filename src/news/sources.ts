@@ -23,6 +23,11 @@ export const preferredDomains = [
   'arstechnica.com',
   'thenewstack.io',
   'bleepingcomputer.com',
+  'theregister.com',
+  'the-decoder.com',
+  'zdnet.com',
+  'huggingface.co',
+  'vnexpress.net',
 ];
 export const fallbackFeeds = [
   { source: 'OpenAI', url: 'https://openai.com/news/rss.xml' },
@@ -33,6 +38,14 @@ export const fallbackFeeds = [
   { source: 'NVIDIA', url: 'https://blogs.nvidia.com/feed/' },
   { source: 'TechCrunch', url: 'https://techcrunch.com/feed/' },
   { source: 'The Verge', url: 'https://www.theverge.com/rss/index.xml' },
+  { source: 'The Register', url: 'https://www.theregister.com/headlines.atom' },
+  { source: 'The New Stack', url: 'https://thenewstack.io/feed/' },
+  { source: 'BleepingComputer', url: 'https://www.bleepingcomputer.com/feed/' },
+  { source: 'AWS Machine Learning', url: 'https://aws.amazon.com/blogs/machine-learning/feed/' },
+  { source: 'The Decoder', url: 'https://the-decoder.com/feed/' },
+  { source: 'ZDNet', url: 'https://www.zdnet.com/rss/news/' },
+  { source: 'Hugging Face', url: 'https://huggingface.co/blog/feed.xml' },
+  { source: 'VnExpress Công nghệ', url: 'https://vnexpress.net/rss/khoa-hoc-cong-nghe.rss' },
 ];
 
 // Preference affects ranking only. Fetching arbitrary discovery URLs still excludes
