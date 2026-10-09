@@ -249,6 +249,11 @@ kể cả JSON sai schema. Logs ghi số tin đã kiểm tra và ID chưa đủ.
 thiếu thì FAILED để retry sau, không coi đó là lỗi nội dung cần viết lại và không
 tự gán điểm hay bỏ qua kiểm tra trùng.
 
+Schema novelty còn ràng buộc `matched_id` riêng cho từng candidate: chỉ lịch sử
+hoặc candidate đứng trước trong thứ tự input. NEW bắt buộc null; DUPLICATE/UPDATE
+bắt buộc một ID hợp lệ, kể cả khi publication date của tin đứng sau cũ hơn.
+Logs/lỗi nêu rõ thiếu kết quả, lặp ID, sai field/điểm hay sai tham chiếu.
+
 Tạo preview cải tiến từ tin đã chọn của một run, **không sửa run, không gửi Telegram, không upload**:
 
 ```powershell

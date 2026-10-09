@@ -242,6 +242,71 @@ test('Ranking stops after three incomplete responses without fabricating scores'
   }
 });
 
+test('Novelty schema forbids forward/self/unknown references and NEW matches before sending to AI', async () => {
+  const { c, repo, pool } = await setup();
+  c.MOCK_OPENAI = false;
+  const news = mockNews(new Date()).slice(0, 3);
+  const history = [{ ...news[0], id: 'history' }];
+  const provider = new OpenAiProvider(c, repo, {} as any);
+  const runId = (await repo.create('2026-10-09', false)).id;
+  (provider as any).structured = async (_w: any, _name: string, schema: any, input: any) => {
+    const newDecision = (id: string) => ({
+      id,
+      decision: 'new',
+      matched_id: null,
+      reason: 'Different event',
+    });
+    const good = news.map((n) => newDecision(n.id));
+    const testReference = (decision: string, matched_id: string | null, expected: boolean) => {
+      const rows = [...good];
+      rows[1] = { ...rows[1], decision, matched_id } as any;
+      assert.equal(schema.safeParse({ decisions: rows }).success, expected);
+    };
+    testReference('duplicate', news[2].id, false);
+    testReference('update', news[1].id, false);
+    testReference('duplicate', 'unknown', false);
+    testReference('new', news[0].id, false);
+    testReference('duplicate', null, false);
+    testReference('duplicate', news[0].id, true);
+    testReference('update', 'history', true);
+    assert.deepEqual(input.allowed_matches[news[1].id], ['history', news[0].id]);
+    return { decisions: good };
+  };
+  try {
+    assert.equal(
+      (await provider.filterRepeatedNews({ runId, revision: 1, step: 'rank' }, news, history)).items
+        .length,
+      3,
+    );
+  } finally {
+    await pool.end();
+  }
+});
+
+test('Novelty failure identifies the invalid reference after bounded retries', async () => {
+  const { c, repo, pool } = await setup();
+  c.MOCK_OPENAI = false;
+  const news = mockNews(new Date()).slice(0, 2);
+  const provider = new OpenAiProvider(c, repo, {} as any);
+  const runId = (await repo.create('2026-10-09', false)).id;
+  (provider as any).structured = async (_w: any, _name: string, _schema: any, input: any) => ({
+    decisions: input.candidates.map((n: any) => ({
+      id: n.id,
+      decision: n.id === news[0].id ? 'duplicate' : 'new',
+      matched_id: n.id === news[0].id ? news[1].id : null,
+      reason: 'Fixture same event',
+    })),
+  });
+  try {
+    await assert.rejects(
+      provider.filterRepeatedNews({ runId, revision: 1, step: 'rank' }, news, []),
+      /invalid classification\/reference/,
+    );
+  } finally {
+    await pool.end();
+  }
+});
+
 test('Storyboard locks every spoken token while the model designs visuals only', async () => {
   const { c, repo, pool } = await setup();
   c.MOCK_OPENAI = false;

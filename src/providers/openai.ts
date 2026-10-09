@@ -187,6 +187,7 @@ export class OpenAiProvider {
     shape: T,
     input: (pending: News[]) => object,
     valid: (row: z.infer<z.ZodObject<T>> & { id: string }) => boolean = () => true,
+    schemaForItem?: (item: News) => z.ZodTypeAny,
   ) {
     const result = new Map<string, z.infer<z.ZodObject<T>> & { id: string }>();
     const rowSchema = z.object({ ...shape, id: z.string() });
@@ -196,13 +197,20 @@ export class OpenAiProvider {
         const pending = batch.filter((n) => !result.has(n.id));
         if (!pending.length) break;
         const ids = pending.map((n) => n.id) as [string, ...string[]];
+        const itemSchemas = schemaForItem ? pending.map(schemaForItem) : [];
+        const responseRowSchema = !schemaForItem
+          ? z.object({ ...shape, id: z.enum(ids) })
+          : itemSchemas.length === 1
+            ? itemSchemas[0]
+            : z.union(itemSchemas as [z.ZodTypeAny, z.ZodTypeAny, ...z.ZodTypeAny[]]);
+        const rejected = new Map<string, string>();
         let response: any;
         try {
           response = await this.structured(
             w,
             name,
             z.object({
-              [key]: z.array(z.object({ ...shape, id: z.enum(ids) })).length(ids.length),
+              [key]: z.array(responseRowSchema).length(ids.length),
             }),
             {
               ...input(pending),
@@ -220,21 +228,38 @@ export class OpenAiProvider {
           if (typeof row?.id === 'string') counts.set(row.id, (counts.get(row.id) || 0) + 1);
         for (const row of rows) {
           const parsed = rowSchema.safeParse(row);
-          if (!parsed.success) continue;
+          if (!parsed.success) {
+            if (ids.includes(row?.id)) rejected.set(row.id, 'invalid fields or score');
+            continue;
+          }
           const value = parsed.data as z.infer<z.ZodObject<T>> & { id: string };
-          if (!ids.includes(value.id) || counts.get(value.id) !== 1) continue;
-          if (valid(value)) result.set(value.id, value);
+          if (!ids.includes(value.id)) continue;
+          if (counts.get(value.id) !== 1) {
+            rejected.set(value.id, 'duplicate result ID');
+            continue;
+          }
+          const item = pending.find((n) => n.id === value.id)!;
+          if ((schemaForItem && !schemaForItem(item).safeParse(value).success) || !valid(value)) {
+            rejected.set(
+              value.id,
+              `invalid classification/reference (matched_id=${String((value as any).matched_id).slice(0, 80)})`,
+            );
+            continue;
+          }
+          result.set(value.id, value);
         }
         const missing = batch.filter((n) => !result.has(n.id)).map((n) => n.id);
         await this.repo.log?.(
           w,
           `${name}: batch ${Math.floor(offset / 8) + 1}, pass ${attempt}/3; accepted ${batch.length - missing.length}/${batch.length}` +
-            (missing.length ? `; unresolved IDs: ${missing.join(', ')}` : ''),
+            (missing.length
+              ? `; unresolved IDs: ${missing.join(', ')}; reasons: ${missing.map((id) => `${id}: ${rejected.get(id) || 'missing result'}`).join('; ')}`
+              : ''),
           missing.length ? 'warn' : 'info',
         );
         if (attempt === 3 && missing.length)
           throw new PermanentError(
-            `${name} incomplete after 3 passes; unresolved IDs: ${missing.join(', ')}; inspect diagnostics`,
+            `${name} incomplete after 3 passes; unresolved IDs: ${missing.join(', ')}; reasons: ${missing.map((id) => `${id}: ${rejected.get(id) || 'missing result'}`).join('; ')}; inspect diagnostics`,
           );
       }
     }
@@ -307,6 +332,12 @@ export class OpenAiProvider {
         history: previous.map(compact),
         candidate_context: items.map(compact),
         candidate_order: items.map((n) => n.id),
+        allowed_matches: Object.fromEntries(
+          pending.map((n) => [
+            n.id,
+            [...historyIds, ...items.slice(0, order.get(n.id)).map((earlier) => earlier.id)],
+          ]),
+        ),
       }),
       (d) =>
         d.decision === 'new'
@@ -314,6 +345,24 @@ export class OpenAiProvider {
           : !!d.matched_id &&
             (historyIds.has(d.matched_id) ||
               (order.has(d.matched_id) && order.get(d.matched_id)! < order.get(d.id)!)),
+      (n) => {
+        const common = { id: z.enum([n.id]), reason: z.string().min(1) };
+        const newEvent = z.object({ ...common, decision: z.enum(['new']), matched_id: z.null() });
+        const allowed = [
+          ...historyIds,
+          ...items.slice(0, order.get(n.id)).map((earlier) => earlier.id),
+        ];
+        return allowed.length
+          ? z.union([
+              newEvent,
+              z.object({
+                ...common,
+                decision: z.enum(['update', 'duplicate']),
+                matched_id: z.enum(allowed as [string, ...string[]]),
+              }),
+            ])
+          : newEvent;
+      },
     );
     const accepted: News[] = [];
     for (const n of items) {
