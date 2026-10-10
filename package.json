@@ -18,6 +18,7 @@
     "test:redis": "tsx scripts/redis-smoke.ts",
     "redis:start": "tsx scripts/local-redis.ts",
     "test:native": "tsx scripts/native-smoke.ts",
+    "test:schedule": "tsx scripts/schedule-smoke.ts",
     "demo": "tsx scripts/demo.ts",
     "test": "tsx --test test/*.test.ts",
     "check": "npm run build && npm test",

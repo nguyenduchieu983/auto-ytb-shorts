@@ -23,6 +23,7 @@ export async function migrate(pool: Pool, memory = false): Promise<void> {
     await client.query(await readFile(resolve('migrations/001_initial.sql'), 'utf8'));
     await client.query(await readFile(resolve('migrations/002_manual_runs.sql'), 'utf8'));
     await client.query(await readFile(resolve('migrations/003_runtime.sql'), 'utf8'));
+    await client.query(await readFile(resolve('migrations/004_schedule.sql'), 'utf8'));
   } finally {
     if (!memory) await client.query('SELECT pg_advisory_unlock(74619320)');
     client.release();
@@ -107,24 +108,29 @@ export class Repository {
     };
   }
   async create(date: string, mock: boolean, requestKey = `daily:${date}`): Promise<Run> {
-    return this.tx(async (c) => {
-      const id = randomUUID();
-      const inserted = await c.query(
-        'INSERT INTO daily_runs (id,run_date,mock,request_key) VALUES ($1,$2,$3,$4) ON CONFLICT (request_key) DO NOTHING RETURNING *',
-        [id, date, mock, requestKey],
-      );
-      if (!inserted.rows.length)
-        return (await c.query('SELECT * FROM daily_runs WHERE request_key=$1', [requestKey]))
-          .rows[0];
-      if (inserted.rows[0].id !== id) return inserted.rows[0];
-      for (const step of STEPS)
-        await c.query('INSERT INTO pipeline_steps (run_id,revision,step) VALUES ($1,1,$2)', [
-          id,
-          step,
-        ]);
-      await this.schedule(c, id, 1);
-      return inserted.rows[0];
-    });
+    return this.tx((c) => this.createInTransaction(c, date, mock, requestKey));
+  }
+  async createInTransaction(
+    c: PoolClient,
+    date: string,
+    mock: boolean,
+    requestKey: string,
+  ): Promise<Run> {
+    const id = randomUUID();
+    const inserted = await c.query(
+      'INSERT INTO daily_runs (id,run_date,mock,request_key) VALUES ($1,$2,$3,$4) ON CONFLICT (request_key) DO NOTHING RETURNING *',
+      [id, date, mock, requestKey],
+    );
+    if (!inserted.rows.length)
+      return (await c.query('SELECT * FROM daily_runs WHERE request_key=$1', [requestKey])).rows[0];
+    if (inserted.rows[0].id !== id) return inserted.rows[0];
+    for (const step of STEPS)
+      await c.query('INSERT INTO pipeline_steps (run_id,revision,step) VALUES ($1,1,$2)', [
+        id,
+        step,
+      ]);
+    await this.schedule(c, id, 1);
+    return inserted.rows[0];
   }
   private async schedule(c: PoolClient, id: string, revision: number) {
     const rows: StepRow[] = (

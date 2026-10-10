@@ -209,7 +209,7 @@ Upload private có status `UPLOADED_PRIVATE`; chỉ `PUBLISHED` khi response xá
 
 ## Scheduler và phục hồi
 
-Mặc định `SCHEDULE_ENABLED=false`, `AUTO_PUBLISH=false`, privacy private. Sau khi đã chạy manual live thành công, bật `SCHEDULE_ENABLED=true`; worker đăng ký BullMQ Job Scheduler lúc 07:30 `Asia/Ho_Chi_Minh`. Scheduler/API mặc định dùng một run cho mỗi ngày địa phương; lệnh Telegram tạo các run độc lập. Timestamp DB lưu UTC.
+Mặc định `SCHEDULE_ENABLED=false`, `AUTO_PUBLISH=false`, privacy private. Dùng lịch dashboard UTC+7 ở phần cuối tài liệu để đặt giờ, số video và tự upload riêng cho các run theo lịch. Khi chưa từng lưu lịch dashboard, cấu hình legacy `SCHEDULE_ENABLED=true` vẫn đăng ký BullMQ Job Scheduler lúc 07:30 `Asia/Ho_Chi_Minh` (hoặc `DAILY_JOB_CRON`). Legacy scheduler/API mặc định dùng một run cho mỗi ngày địa phương; lệnh Telegram và lịch dashboard tạo các run độc lập. Timestamp DB lưu UTC.
 
 DB transaction ghi trạng thái bước và outbox cùng nhau. Dispatcher đẩy outbox vào BullMQ với job ID `runId-step-rN`. Job hoàn thành không được chạy lại nếu step đã thành công. Các bước assets chạy độc lập; render chờ visuals và subtitles. Worker heartbeat lease; lease hết hạn được đưa lại vào outbox. Retry tạm thời tối đa 3 lần thực thi; `FAILED`, `NEEDS_REVISION`, `SKIPPED`, `UPLOAD_UNCERTAIN` được lưu với step/lỗi cụ thể.
 
@@ -263,3 +263,19 @@ npm.cmd run video:preview -- <runId>
 Kết quả/usage/QC nằm ở `storage/quality-preview/<id>/report.json`; MP4 ở `render/final.mp4`. Preview dùng provider theo cấu hình mock/live hiện tại. Khi muốn dùng bản mới trong luồng duyệt chính, regenerate `script` cho run chưa bắt đầu upload; preview riêng không có lệnh publish.
 
 Kiểm chứng bản nâng cấp: build và 54 tests pass; preview live một lượt TTS dài 56,35 giây, word alignment 97,8%, technical QC 1080x1920/30fps/H.264/AAC đạt. Kiểm tra novelty bằng API thật đã loại cùng sự kiện đổi tiêu đề và giữ hai tin khác; không thay thế kiểm chứng độ chính xác của nguồn.
+
+## Lịch video trên dashboard (UTC+7)
+
+Mở mục **Lịch tạo video & upload YouTube** trên dashboard, chọn giờ bắt đầu hằng ngày (Việt Nam, UTC+7), số video từ 1–20, bật lịch và tùy chọn tự upload rồi lưu. Mặc định lịch dashboard tắt và vẫn duyệt thủ công. Cấu hình lưu PostgreSQL, worker đọc mỗi vòng dispatch (khoảng 2 giây), không cần sửa `.env` hay restart. Khi đã lưu lịch dashboard, lịch cron `.env` cũ ngừng tạo run để tránh hai lịch cùng chạy. Mỗi ngày tối đa một đợt; đổi giờ trong ngày đã khởi động không tạo thêm đợt.
+
+Giờ đặt là giờ bắt đầu sản xuất; từng video một chủ đề được tạo lần lượt, upload khi render/kiểm chứng/QC đủ điều kiện. Đợt giữ số lượng và lựa chọn auto-upload tại lúc bắt đầu; thay đổi giờ/số lượng áp dụng cho đợt mới. Số lượng là số lượt tạo, không bảo đảm tất cả đăng thành công: video lỗi/cần sửa/bỏ qua được giữ để quản trị xử lý, đợt tiếp tục video kế tiếp. Video không auto-eligible vẫn chờ duyệt. Không bật auto-upload khi providers mock/mixed; upload giữ privacy trong `.env` (mặc định private). Lựa chọn này áp dụng riêng cho video theo lịch, không tự duyệt các run manual/Telegram.
+
+Tắt lịch ngừng cấp video tiếp theo và ngừng tự duyệt các video chưa được duyệt; video đã chạy hoặc upload đã được xếp hàng vẫn tiếp tục. Bật lại tiếp tục đợt dở. Máy, PostgreSQL, Redis và worker phải chạy tại giờ đã đặt; không tạo bù một đợt chưa bắt đầu nếu máy tắt qua giờ đó. Đợt đã bắt đầu được tiếp tục sau restart. Request key và transaction khóa cấu hình chống tạo trùng khi nhiều worker cùng tick; auto-upload vẫn dùng approval/QC, revision và resumable-upload gates hiện có. Dashboard hiển thị giờ tiếp theo và lịch sử bảy đợt gần nhất, nhấn từng video để xem steps/logs.
+
+Kiểm tra lịch với PostgreSQL thật bằng schema tạm riêng, không chạm lịch production/Redis và không gọi API ngoài:
+
+```powershell
+npm.cmd run test:schedule
+```
+
+Kiểm tra này tạo rồi xóa schema riêng, thử tám tick đồng thời, rollover UTC+7, thứ tự video, số lượng và outbox. `npm run check` kiểm tra thêm validation, bảo vệ API, tắt lịch, giới hạn batch và phục hồi auto-approval bằng fixtures mock; không chứng minh upload YouTube thật.

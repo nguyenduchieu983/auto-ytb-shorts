@@ -19,6 +19,7 @@ test('Dashboard sessions protect data, reject cross-origin mutations and support
     assert.ok((await shell.text()).includes('Shorts Studio'));
     assert.ok(shell.headers.get('content-security-policy')?.includes("script-src 'self'"));
     assert.equal((await fetch(url + '/dashboard/api/runs')).status, 401);
+    assert.equal((await fetch(url + '/dashboard/api/schedule')).status, 401);
     const post = (path: string, body: any, headers: any = {}) =>
       fetch(url + path, {
         method: 'POST',
@@ -42,6 +43,37 @@ test('Dashboard sessions protect data, reject cross-origin mutations and support
     assert.ok(setCookie.includes('HttpOnly') && setCookie.includes('SameSite=Strict'));
     assert.ok(!setCookie.includes(c.ADMIN_TOKEN));
     const cookie = setCookie.split(';')[0];
+    const schedule = {
+      enabled: true,
+      timezone: 'Asia/Ho_Chi_Minh',
+      time: '20:30',
+      videos_per_day: 2,
+      auto_publish: false,
+    };
+    assert.equal(
+      (
+        await post('/dashboard/api/schedule', schedule, {
+          Cookie: cookie,
+          Origin: 'https://other.example',
+        })
+      ).status,
+      403,
+    );
+    assert.equal(
+      (
+        await post(
+          '/dashboard/api/schedule',
+          { ...schedule, videos_per_day: 0 },
+          { Cookie: cookie },
+        )
+      ).status,
+      400,
+    );
+    const savedSchedule = await post('/dashboard/api/schedule', schedule, { Cookie: cookie }).then(
+      (r) => r.json(),
+    );
+    assert.equal(savedSchedule.settings.videos_per_day, 2);
+    assert.equal(savedSchedule.settings.time, '20:30');
     assert.equal(
       (
         await fetch(url + '/dashboard/session', { headers: { Cookie: cookie } }).then((r) =>

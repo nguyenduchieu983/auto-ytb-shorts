@@ -18,6 +18,7 @@ import { z } from 'zod';
 import { AdminGuard, equal, hasSession, sameOrigin, sessionCookie } from './auth';
 import { Pipeline, safeError } from './engine';
 import { STEPS } from './domain';
+import { VideoScheduler } from './video-schedule';
 
 const statuses = [
   'PENDING',
@@ -99,6 +100,12 @@ export class DashboardPublicController {
 @UseGuards(AdminGuard)
 export class DashboardController {
   constructor(@Inject('PIPELINE') private p: Pipeline) {}
+  @Get('schedule') schedule() {
+    return new VideoScheduler(this.p.repo, this.p.c).view();
+  }
+  @Post('schedule') saveSchedule(@Body() body: unknown) {
+    return new VideoScheduler(this.p.repo, this.p.c).save(body);
+  }
   @Get('runs') async runs(@Query() query: unknown) {
     const { page, status, search } = pageQuery.parse(query);
     const params: any[] = [];
@@ -214,7 +221,11 @@ export class DashboardController {
         telegram: this.p.c.MOCK_TELEGRAM ? 'mock' : 'live',
         youtube: this.p.c.MOCK_YOUTUBE ? 'mock' : 'live',
       },
-      schedule: this.p.c.SCHEDULE_ENABLED,
+      schedule:
+        (await new VideoScheduler(this.p.repo, this.p.c).saved())?.enabled ??
+        this.p.c.SCHEDULE_ENABLED,
+      scheduled_auto_publish: !!(await new VideoScheduler(this.p.repo, this.p.c).saved())
+        ?.auto_publish,
       auto_publish: this.p.c.AUTO_PUBLISH,
       privacy: this.p.c.YOUTUBE_PRIVACY_STATUS,
       timezone: this.p.c.APP_TIMEZONE,

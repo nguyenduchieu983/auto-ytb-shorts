@@ -59,6 +59,8 @@ const state = {
   logStep: '',
   logLevel: '',
   createKey: null,
+  scheduleLoaded: false,
+  scheduleDirty: false,
 };
 const esc = (v) =>
   String(v ?? '').replace(
@@ -88,6 +90,8 @@ function loginView() {
   $('login').hidden = false;
   state.id = null;
   state.detail = null;
+  state.scheduleLoaded = false;
+  state.scheduleDirty = false;
 }
 async function api(path, options = {}) {
   const response = await fetch(path, {
@@ -112,7 +116,7 @@ function runtimeView(r) {
           `<span class="service"><i class="dot ${[r.api, r.database, r.redis, r.worker][i] ? 'ok' : 'bad'}"></i>${n} · ${[r.api, r.database, r.redis, r.worker][i] ? 'Online' : 'Offline'}</span>`,
       )
       .join('') +
-    `<span class="strip-settings">${r.auto_publish ? 'Auto-publish' : 'Duyệt thủ công'} · ${esc(r.privacy)} · Cron ${r.schedule ? 'bật' : 'tắt'}</span>`;
+    `<span class="strip-settings">${r.auto_publish ? 'Auto-publish' : r.schedule && r.scheduled_auto_publish ? 'Lịch: tự upload' : 'Duyệt thủ công'} · ${esc(r.privacy)} · Lịch ${r.schedule ? 'bật' : 'tắt'}</span>`;
   $('side-mode').innerHTML =
     `<span class="badge ${Object.values(r.modes).every((v) => v === 'live') ? 'SUCCEEDED' : 'PENDING'}">${Object.values(r.modes).every((v) => v === 'live') ? '● LIVE PROVIDERS' : '● MOCK / MIXED'}</span>`;
   const workers = r.workers.filter((w) => Date.now() - new Date(w.updated_at).getTime() < 45000);
@@ -311,10 +315,12 @@ async function refresh() {
   try {
     const query = new URLSearchParams({ page: state.page, search: $('search').value });
     if ($('filter').value) query.set('status', $('filter').value);
-    const [runs, runtime] = await Promise.all([
+    const [runs, runtime, schedule] = await Promise.all([
       api('/dashboard/api/runs?' + query),
       api('/dashboard/api/runtime'),
+      api('/dashboard/api/schedule'),
     ]);
+    scheduleView(schedule);
     runtimeView(runtime);
     listView(runs);
     if (state.id) {
@@ -358,6 +364,61 @@ async function refresh() {
     }
   }
 }
+function scheduleView(data) {
+  const s = data.settings;
+  if (!state.scheduleDirty) {
+    $('schedule-enabled').checked = s.enabled;
+    $('schedule-time').value = s.time;
+    $('schedule-count').value = s.videos_per_day;
+    $('schedule-auto').checked = s.auto_publish;
+  }
+  state.scheduleLoaded = true;
+  $('schedule-info').textContent =
+    `Timezone: Việt Nam (UTC+7). YouTube: ${data.privacy}. ${data.next_at ? 'Lịch bắt đầu tiếp theo: ' + new Date(data.next_at).toLocaleString('vi-VN', { timeZone: 'Asia/Ho_Chi_Minh' }) : 'Lịch dashboard đang tắt.'} ${data.live_ready ? '' : 'Providers mock/mixed: chưa thể bật tự upload.'} ${data.legacy_enabled ? 'Lịch cron .env cũ đang bật; lưu form này sẽ thay thế lịch cũ.' : ''}`;
+  $('schedule-history').innerHTML = data.recent
+    .map(
+      (b) =>
+        `<div class="schedule-history-row"><b>${esc(b.date)} · ${esc(b.settings.time)} UTC+7</b> · Đã tạo ${b.runs.length}/${b.settings.videos_per_day} video ${b.runs.map((r) => `<button type="button" class="quiet" data-scheduled-run="${esc(r.id)}">#${r.sequence} ${esc(labels[r.status] || r.status)} ↗</button>`).join('')}</div>`,
+    )
+    .join('');
+}
+$('schedule-form').addEventListener('input', () => {
+  state.scheduleDirty = true;
+});
+$('schedule-form').addEventListener('submit', async (event) => {
+  event.preventDefault();
+  if (!state.scheduleLoaded || state.busy) return;
+  $('schedule-save').disabled = true;
+  try {
+    const data = await api('/dashboard/api/schedule', {
+      method: 'POST',
+      body: JSON.stringify({
+        enabled: $('schedule-enabled').checked,
+        timezone: 'Asia/Ho_Chi_Minh',
+        time: $('schedule-time').value,
+        videos_per_day: Number($('schedule-count').value),
+        auto_publish: $('schedule-auto').checked,
+      }),
+    });
+    state.scheduleDirty = false;
+    scheduleView(data);
+    notice('Đã lưu lịch UTC+7. Worker áp dụng ngay, không cần restart.');
+    await refresh();
+  } catch (error) {
+    notice(error.message, true);
+  } finally {
+    $('schedule-save').disabled = false;
+  }
+});
+$('schedule-history').addEventListener('click', (event) => {
+  const button = event.target.closest('[data-scheduled-run]');
+  if (!button || state.busy) return;
+  state.id = button.dataset.scheduledRun;
+  state.revision = null;
+  state.detail = null;
+  state.signature = '';
+  refresh();
+});
 function confirmAction(title, text, video = false) {
   $('confirm-title').textContent = title;
   $('confirm-text').textContent = text;

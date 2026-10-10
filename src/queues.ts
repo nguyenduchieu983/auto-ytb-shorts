@@ -7,6 +7,7 @@ import { TelegramPolling } from './telegram-polling';
 import { parseTelegramUpdate } from './providers/telegram';
 import { handleTelegramCommand } from './telegram-commands';
 import { randomUUID } from 'node:crypto';
+import { VideoScheduler } from './video-schedule';
 
 export class QueueRuntime {
   private connection: IORedis;
@@ -55,7 +56,8 @@ export class QueueRuntime {
     const daily = new Worker(
       'daily',
       async () => {
-        await this.pipeline.run();
+        if (!(await new VideoScheduler(this.pipeline.repo, this.pipeline.c).saved()))
+          await this.pipeline.run();
       },
       { connection: this.connection as any, concurrency: 1, prefix: this.pipeline.c.QUEUE_PREFIX },
     );
@@ -101,6 +103,9 @@ export class QueueRuntime {
     this.pumping = true;
     try {
       await this.pipeline.repo.recoverLeases();
+      const scheduler = new VideoScheduler(this.pipeline.repo, this.pipeline.c);
+      await scheduler.publishReady();
+      await scheduler.tick();
       for (const event of await this.pipeline.repo.outbox()) {
         const q = this.queues[this.queue(event)],
           existing = await q.getJob(event.id);

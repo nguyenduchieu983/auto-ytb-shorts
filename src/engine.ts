@@ -1,5 +1,6 @@
 import { Config, localDate } from './config';
 import { Repository } from './db';
+import { VideoScheduler } from './video-schedule';
 import {
   dedupNews,
   durationClass,
@@ -220,7 +221,11 @@ export class Pipeline {
       await this.repo.assertCurrent(w, claim.token);
       const artifact = await this.storage.json(dir, 'result.json', result);
       await this.repo.finish(w, claim.token, result, artifact, status);
-      if (w.step === 'approval' && this.c.AUTO_PUBLISH && o.qc.auto_eligible)
+      if (
+        w.step === 'approval' &&
+        o.qc.auto_eligible &&
+        (await new VideoScheduler(this.repo, this.c).autoPublishAllowed(w.runId))
+      )
         await this.repo.publish(w.runId, w.revision, 'auto');
       if (w.step === 'upload')
         await this.telegram

@@ -1019,3 +1019,49 @@ dialog input {
     font-size: 18px;
   }
 }
+.schedule-panel {
+  background: var(--panel, #fff);
+  border: 1px solid var(--border, #dce3e9);
+  border-radius: 16px;
+  padding: 18px 22px;
+  margin-bottom: 20px;
+}
+.schedule-panel summary {
+  cursor: pointer;
+  font-weight: 650;
+}
+.schedule-fields {
+  display: flex;
+  gap: 18px;
+  align-items: end;
+  flex-wrap: wrap;
+  padding-top: 18px;
+}
+.schedule-fields label {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  font-size: 13px;
+}
+.schedule-fields .schedule-check {
+  flex-direction: row;
+  align-items: center;
+  max-width: 230px;
+  padding: 10px 0;
+}
+.schedule-fields input[type='checkbox'] {
+  width: 18px;
+  height: 18px;
+  margin: 0;
+}
+.schedule-fields input[type='number'] {
+  width: 105px;
+}
+.schedule-history-row {
+  font-size: 13px;
+  padding: 8px 0;
+  border-top: 1px solid var(--border, #dce3e9);
+}
+.schedule-history-row button {
+  margin-left: 8px;
+}

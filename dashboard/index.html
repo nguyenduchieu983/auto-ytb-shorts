@@ -62,6 +62,46 @@
           <div id="runtime-strip" class="runtime-strip"></div>
           <div id="notice" class="notice" role="status" hidden></div>
           <section id="production">
+            <details class="schedule-panel">
+              <summary>Lịch tạo video & upload YouTube · UTC+7</summary>
+              <form id="schedule-form">
+                <div class="schedule-fields">
+                  <label class="schedule-check"
+                    ><input id="schedule-enabled" type="checkbox" /> Bật lịch hằng ngày</label
+                  >
+                  <label
+                    >Giờ bắt đầu (Việt Nam, UTC+7)<input
+                      id="schedule-time"
+                      type="time"
+                      required
+                      value="07:30"
+                  /></label>
+                  <label
+                    >Số video mỗi ngày<input
+                      id="schedule-count"
+                      type="number"
+                      min="1"
+                      max="20"
+                      step="1"
+                      required
+                      value="1"
+                  /></label>
+                  <label class="schedule-check"
+                    ><input id="schedule-auto" type="checkbox" /> Tự upload YouTube sau khi đạt
+                    QC</label
+                  >
+                  <button id="schedule-save" class="primary" type="submit">Lưu lịch</button>
+                </div>
+                <p class="hint" id="schedule-info"></p>
+                <p class="hint">
+                  Mỗi video một chủ đề, chạy lần lượt. Giờ trên là giờ bắt đầu tạo, không phải giờ
+                  xuất bản chính xác. Nếu không bật tự upload, video chờ duyệt. Máy và worker phải
+                  đang chạy; không chạy bù giờ bắt đầu bị bỏ lỡ. Tắt lịch ngừng tạo video tiếp theo;
+                  video đã chạy vẫn tiếp tục.
+                </p>
+                <div id="schedule-history"></div>
+              </form>
+            </details>
             <div id="stats" class="stats"></div>
             <div class="board">
               <section class="run-panel">
