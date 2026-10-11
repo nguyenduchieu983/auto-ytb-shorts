@@ -1,6 +1,8 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { setup } from './helpers';
+import { Pipeline } from '../src/engine';
+import { mockNews } from '../src/mock';
 import {
   VideoScheduler,
   defaultSchedule,
@@ -10,6 +12,33 @@ import {
 
 const due = new Date('2026-10-09T17:05:10Z'); // 00:05 on October 10, UTC+7
 const plan = { ...defaultSchedule, enabled: true, time: '00:05', videos_per_day: 3 };
+test('Scheduled auto-upload rank chooses a dated alternative instead of the highest-scoring undated story', async () => {
+  const { repo, pool, c } = await setup();
+  c.MOCK_OPENAI = c.MOCK_YOUTUBE = c.MOCK_TELEGRAM = false;
+  const scheduler = new VideoScheduler(repo, c);
+  const pipeline = new Pipeline(c, repo);
+  const items = mockNews(new Date()).slice(0, 2);
+  items[0].published_at = null;
+  items[0].date_parse_failed = true;
+  pipeline.ai.filterRepeatedNews = async () => ({ items, decisions: [] });
+  pipeline.ai.rank = async () => items;
+  try {
+    await scheduler.save({ ...plan, auto_publish: true });
+    const run = await scheduler.tick(due);
+    assert.ok(run);
+    const discover = { runId: run.id, revision: 1, step: 'discover' as const };
+    const claim = await repo.claim(discover);
+    assert.ok(claim);
+    await repo.finish(discover, claim.token, { items }, { path: 'fixture', checksum: 'fixture' });
+    await pipeline.execute({ runId: run.id, revision: 1, step: 'rank' });
+    const rank = (await repo.steps(run.id, 1)).find((s) => s.step === 'rank')!;
+    assert.equal(rank.status, 'SUCCEEDED');
+    assert.equal(rank.output.require_publication_date, true);
+    assert.equal(rank.output.selected[0].id, items[1].id);
+  } finally {
+    await pool.end();
+  }
+});
 test('Schedule uses UTC+7 at date rollover and calculates the next daily start', () => {
   assert.equal(vietnamTime(due), '00:05');
   assert.equal(nextScheduleAt(plan, new Date('2026-10-09T17:04:00Z')), '2026-10-09T17:05:00.000Z');

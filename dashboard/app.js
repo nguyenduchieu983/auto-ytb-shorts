@@ -236,7 +236,7 @@ function qcView() {
           )
           .join(
             '',
-          )}</div><p class="hint">Auto-eligible: ${qc.auto_eligible ? 'Có' : 'Không'}. QC kỹ thuật không thay thế xem/nghe preview và duyệt nội dung.</p>`
+          )}</div><p class="hint">Auto-eligible: ${qc.auto_eligible ? 'Có' : 'Không'}. ${esc((qc.auto_block_reasons || []).join('; '))} QC kỹ thuật không thay thế xem/nghe preview và duyệt nội dung.</p>`
       : '<p class="muted">Chưa có kết quả QC.</p>'
   }`;
 }

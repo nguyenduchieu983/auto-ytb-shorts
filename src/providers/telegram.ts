@@ -75,8 +75,12 @@ export class TelegramProvider {
     return data.result;
   }
   async preview(run: Run, video: any, metadata: any, news: any[], qc: any, cost: number) {
+    const autoStatus = qc.auto_eligible
+      ? 'Đủ điều kiện tự upload nếu đã bật lịch/auto-publish'
+      : `Chờ duyệt: ${(qc.auto_block_reasons || ['Chưa đủ điều kiện tự upload']).join('; ')}`;
     const text = `${run.mock ? '🧪 DEMO — âm thanh/dữ liệu mẫu' : '✅ Video sẵn sàng duyệt'}\n${metadata.title}\nDuration: ${qc.duration.toFixed(1)}s | QC: ${qc.score}/100\nCost reservation: $${cost.toFixed(2)}\n\n${news.map((n, i) => `${i + 1}. ${n.title}\n${n.url}`).join('\n')}\n\nRun: ${run.id}\nRevision: ${run.revision}\n/publish ${run.id} ${run.revision}\n/regenerate ${run.id} ${run.revision} script\n/regenerate ${run.id} ${run.revision} voice\n/regenerate ${run.id} ${run.revision} visuals\n/regenerate ${run.id} ${run.revision} render\n/skip ${run.id} ${run.revision}\n/status ${run.id} ${run.revision}`;
-    if (this.c.MOCK_TELEGRAM) return { mock: true, text, preview_path: video.path };
+    const previewText = text + '\n\n' + autoStatus;
+    if (this.c.MOCK_TELEGRAM) return { mock: true, text: previewText, preview_path: video.path };
     // Bot API file limit: deliver an extra compressed preview when final video is too large.
     if ((await stat(video.path)).size > 49 * 1024 * 1024)
       throw new PermanentError(
@@ -93,7 +97,7 @@ export class TelegramProvider {
     const message = await this.call('sendVideo', form);
     await this.call('sendMessage', {
       chat_id: this.c.TELEGRAM_ADMIN_CHAT_ID,
-      text,
+      text: previewText,
       disable_web_page_preview: true,
     });
     return { mock: false, message_id: message.message_id };

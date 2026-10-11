@@ -279,3 +279,5 @@ npm.cmd run test:schedule
 ```
 
 Kiểm tra này tạo rồi xóa schema riêng, thử tám tick đồng thời, rollover UTC+7, thứ tự video, số lượng và outbox. `npm run check` kiểm tra thêm validation, bảo vệ API, tắt lịch, giới hạn batch và phục hồi auto-approval bằng fixtures mock; không chứng minh upload YouTube thật.
+
+Khi tự upload đang được bật cho run, bước rank chỉ chọn tin có ngày xuất bản nguồn đã xác thực, rồi chọn điểm cao nhất trong nhóm đó. Tin thiếu ngày vẫn có thể chọn ở chế độ duyệt thủ công. Nếu không còn tin có ngày, rank dừng NEEDS_REVISION với `AUTO_UPLOAD_NO_DATED_NEWS` trước khi tốn phí TTS/render; không tự bịa ngày hoặc nới gate upload. QC lưu `auto_block_reasons`; logs, tab QC và preview Telegram nêu lý do chưa đủ điều kiện tự upload (ví dụ thiếu ngày nguồn hoặc thời lượng ngoài 45–60 giây). `hard_pass=true` không đồng nghĩa `auto_eligible=true`.

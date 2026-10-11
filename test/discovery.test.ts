@@ -296,6 +296,13 @@ test('Selection picks exactly one highest-ranked event with confidence tie-break
     assert.equal(service.selectTopNews(items.slice(0, 2)).length, 1);
     assert.equal(service.selectTopNews(items.slice(0, 1)).length, 1);
     assert.throws(() => service.selectTopNews([]), /NEWS_DISCOVERY_EMPTY/);
+    items[0].published_at = null;
+    items[0].date_parse_failed = true;
+    // Manual mode may review an undated story, but auto-upload selects a dated alternative.
+    assert.deepEqual(service.selectTopNews(items), [items[0]]);
+    assert.deepEqual(service.selectTopNews(items, true), [items[2]]);
+    assert.throws(() => service.selectTopNews([items[0]], true), /AUTO_UPLOAD_NO_DATED_NEWS/);
+    assert.throws(() => service.selectTopNews([], true), /NEWS_DISCOVERY_EMPTY/);
   } finally {
     await pool.end();
   }

@@ -84,9 +84,19 @@ export class Pipeline {
           const discovery = this.ai.newsDiscovery();
           if (o.discover.diagnostics) discovery.counts = { ...o.discover.diagnostics };
           const scored = this.c.MOCK_OPENAI ? items : await discovery.rank(w, items);
+          const requirePublicationDate = await new VideoScheduler(
+            this.repo,
+            this.c,
+          ).autoPublishAllowed(w.runId);
+          if (requirePublicationDate)
+            await this.repo.log(
+              w,
+              `Auto-upload selection: ${scored.filter((n) => n.published_at !== null).length}/${scored.length} candidates have a publication date; undated items excluded`,
+            );
           result = {
             items: scored,
-            selected: discovery.selectTopNews(scored),
+            selected: discovery.selectTopNews(scored, requirePublicationDate),
+            require_publication_date: requirePublicationDate,
             format: 'single-story',
             diagnostics: discovery.counts,
             novelty: novelty.decisions,
@@ -166,23 +176,32 @@ export class Pipeline {
           const score = hard_pass
             ? Math.round(75 + 15 * freshness + (technical.duration_class === 'pass' ? 10 : 0))
             : 0;
+          const autoBlockReasons = [
+            ...(!hard_pass ? ['Kiểm chứng/QC bắt buộc chưa đạt'] : []),
+            ...(score < 85 ? [`QC ${score}/100, cần ít nhất 85`] : []),
+            ...(technical.duration_class !== 'pass'
+              ? ['Thời lượng ngoài khoảng tự upload 45–60 giây']
+              : []),
+            ...(claim.run.mock ? ['Video dùng provider mock'] : []),
+            ...(news.length !== (singleStory ? 1 : 3) ? ['Số tin không đúng format video'] : []),
+            ...news
+              .filter((n) => n.published_at === null)
+              .map((n) => `Thiếu ngày xuất bản nguồn: ${n.title}`),
+          ];
           result = {
             ...technical,
             checks,
             hard_pass,
             score,
-            auto_eligible:
-              hard_pass &&
-              score >= 85 &&
-              technical.duration_class === 'pass' &&
-              !claim.run.mock &&
-              news.length === (singleStory ? 1 : 3) &&
-              news.every((n) => n.published_at !== null),
+            auto_eligible: autoBlockReasons.length === 0,
+            auto_block_reasons: autoBlockReasons,
           };
           if (!hard_pass) {
             await this.storage.json(dir, 'qc-failed.json', result);
             throw new ReviewError('Mandatory QC check failed; regenerate the failed stage');
           }
+          if (autoBlockReasons.length)
+            await this.repo.log(w, `Auto-upload blocked: ${autoBlockReasons.join('; ')}`, 'warn');
           break;
         }
         case 'approval': {

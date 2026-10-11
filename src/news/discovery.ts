@@ -9,6 +9,7 @@ import {
   News,
   newsSchema,
   PermanentError,
+  ReviewError,
   SkipError,
   sourceQuality,
   Work,
@@ -403,12 +404,19 @@ export class NewsDiscoveryService {
       score: Math.min(100, n.score + sourceQuality(n)),
     }));
   }
-  selectTopNews(items: News[]): News[] {
+  selectTopNews(items: News[], requirePublicationDate = false): News[] {
     const sorted = this.deduplicate(items).sort(
       (a, b) => b.score - a.score || b.confidence - a.confidence,
     );
     // Dedup/novelty still inspect all candidates; the video develops one event.
-    const selected = sorted.slice(0, 1);
+    const eligible = requirePublicationDate
+      ? sorted.filter((n) => n.published_at !== null)
+      : sorted;
+    if (requirePublicationDate && sorted.length && !eligible.length)
+      throw new ReviewError(
+        'AUTO_UPLOAD_NO_DATED_NEWS: no candidate has a verified publication date; review sources or regenerate rank',
+      );
+    const selected = eligible.slice(0, 1);
     this.counts.finalSelectedCount = selected.length;
     console.log(this.counts);
     if (!selected.length)
