@@ -111,7 +111,10 @@ function runtimeView(r) {
   state.runtime = r;
   if (r.content_provider === 'codex') {
     descriptions.discover = 'Đọc RSS và bài nguồn, xử lý bằng quota Codex';
-    descriptions.voice = 'Piper local; đo thời lượng cảnh, ước lượng timing từng từ';
+    descriptions.voice =
+      r.voice_provider === 'edge-nam-minh'
+        ? `Nam Minh ${r.voice_rate}; đọc liền mạch, căn theo word boundaries`
+        : 'Piper local; đo thời lượng cảnh, ước lượng timing từng từ';
     descriptions.visuals = 'Card/diagram và typography render local';
   }
   $('runtime-strip').innerHTML =
@@ -121,7 +124,7 @@ function runtimeView(r) {
           `<span class="service"><i class="dot ${[r.api, r.database, r.redis, r.worker][i] ? 'ok' : 'bad'}"></i>${n} · ${[r.api, r.database, r.redis, r.worker][i] ? 'Online' : 'Offline'}</span>`,
       )
       .join('') +
-    `<span class="strip-settings">${r.content_provider === 'codex' ? 'Codex quota · voice/hình local · ' : ''}${r.auto_publish ? 'Auto-publish' : r.schedule && r.scheduled_auto_publish ? 'Lịch: tự upload' : 'Duyệt thủ công'} · ${esc(r.privacy)} · Lịch ${r.schedule ? 'bật' : 'tắt'}</span>`;
+    `<span class="strip-settings">${r.content_provider === 'codex' ? `Codex quota · ${r.voice_provider === 'edge-nam-minh' ? 'Nam Minh ' + esc(r.voice_rate) : 'Piper local'} · ` : ''}${r.auto_publish ? 'Auto-publish' : r.schedule && r.scheduled_auto_publish ? 'Lịch: tự upload' : 'Duyệt thủ công'} · ${esc(r.privacy)} · Lịch ${r.schedule ? 'bật' : 'tắt'}</span>`;
   $('side-mode').innerHTML =
     `<span class="badge ${Object.values(r.modes).every((v) => v === 'live') ? 'SUCCEEDED' : 'PENDING'}">${Object.values(r.modes).every((v) => v === 'live') ? '● LIVE PROVIDERS' : '● MOCK / MIXED'}</span>`;
   const workers = r.workers.filter((w) => Date.now() - new Date(w.updated_at).getTime() < 45000);
@@ -147,7 +150,9 @@ function runtimeView(r) {
     stat(
       'YouTube privacy',
       r.privacy,
-      (r.content_provider === 'codex' ? 'Codex quota + local media' : 'OpenAI ' + r.modes.openai) +
+      (r.content_provider === 'codex'
+        ? `Codex · ${r.voice_provider === 'edge-nam-minh' ? 'Nam Minh' : 'Piper'}`
+        : 'OpenAI ' + r.modes.openai) +
         ' · Telegram ' +
         r.modes.telegram,
       '↗',
@@ -564,7 +569,7 @@ $('create').addEventListener('click', async () => {
     !(await confirmAction(
       'Tạo video mới',
       state.runtime?.content_provider === 'codex'
-        ? 'Tạo một run độc lập bằng quota Codex, voice và hình local. Không gọi OpenAI API trả phí. Run thủ công dùng chế độ duyệt/upload hiện tại.'
+        ? `Tạo một run độc lập bằng quota Codex, ${state.runtime.voice_provider === 'edge-nam-minh' ? 'voice Nam Minh online' : 'voice Piper local'} và hình local. Không gọi OpenAI API trả phí. Run thủ công dùng chế độ duyệt/upload hiện tại.`
         : `Tạo một run độc lập, kể cả cùng ngày. OpenAI đang ở chế độ ${state.runtime?.modes.openai}; run live có thể phát sinh phí. Video sẽ chờ duyệt trước khi upload.`,
     ))
   )

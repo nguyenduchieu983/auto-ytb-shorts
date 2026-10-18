@@ -316,3 +316,13 @@ Piper tạo và đo từng scene bằng audio thật, ghép thành một file MP
 Kiểm tra `npm run check` dùng mock/stub (bao gồm quota hết, lọc env và chặn HTTP trả phí). `npm run video:preview -- <runId>` chạy preview từ tin đã chọn, không gửi Telegram/upload; trong mode Codex sẽ tiêu quota Codex và tổng hợp/render local. `npm run news:discover` kiểm tra RSS/extraction/rank thực, ghi audit riêng và không tạo run/upload. Hai lệnh này không chứng minh upload YouTube thành công.
 
 Kiểm chứng lần triển khai Codex/local: 81 tests mock/stub pass; request thật qua ChatGPT login thành công; RSS thật trích xuất/rank 23 tin; novelty thật loại được một sự kiện đã có và metadata có attribution. Preview từ tin đã chọn render dài 45,4 giây, 1080×1920, kỹ thuật QC pass, API reservation bằng 0; không gửi Telegram hoặc upload YouTube trong các lượt kiểm tra này. Kiểm chứng kỹ thuật không chứng minh phát âm/word timing hoàn hảo.
+
+## Giọng nam Nam Minh -10% trong chế độ Codex
+
+Đặt `LOCAL_VOICE_PROVIDER=edge`, `EDGE_TTS_VOICE=vi-VN-NamMinhNeural`, `EDGE_TTS_RATE=-10%` trong `.env`, giữ `CONTENT_PROVIDER=codex` và `PAID_API_ENABLED=false`. `npm run setup:local-voice` cài thêm `edge-tts==7.3.1` vào Python venv hiện có; giọng Edge không cần Piper model (doctor chỉ kiểm tra import edge_tts). Restart API/worker sau khi đổi cấu hình. `LOCAL_VOICE_PROVIDER=piper` vẫn được giữ để chọn lại bằng cấu hình; lỗi Edge không tự đổi provider.
+
+Nam Minh đọc toàn bộ lời trong một performance, pitch -2Hz như mẫu đã chọn, tốc độ cố định -10%. Không tự tăng tốc audio hoặc đổi rate để ép về 55 giây. Nếu vượt envelope 40–65 giây, pipeline dừng NEEDS_REVISION để chỉnh kịch bản; ngoài mục tiêu 45–60 giây vẫn không auto-eligible như trước. Chỉ retry lỗi tổng hợp tối đa một lần trong mỗi lượt voice, mỗi request giới hạn 90 giây. Cần Internet, lời đọc được gửi tới dịch vụ Microsoft Edge; không dùng API key hoặc OpenAI API trả phí. Edge TTS là dịch vụ online, không có bảo đảm SLA như API trả phí; khi lỗi pipeline báo để retry, không âm thầm dùng voice khác.
+
+Dịch vụ trả WordBoundary; pipeline căn token/scene bằng mốc này và đánh dấu `edge-service-word-boundaries`. Coverage là độ khớp văn bản với metadata dịch vụ, không phải kiểm chứng phát âm/ASR. Thiếu word boundaries hoặc coverage thấp sẽ bị chặn. Metadata YouTube ghi đúng giọng Microsoft Nam Minh, không gắn attribution Piper khi không dùng Piper. Dashboard hiển thị voice provider và tốc độ.
+
+Kiểm chứng: 83 tests mock/stub pass; preview chạy đúng voice pipeline với Nam Minh -10% dài 51,216 giây, text/word-boundary coverage 99,3%. Preview chỉ dùng nội dung và visual đã có, không gọi text API và không upload YouTube.

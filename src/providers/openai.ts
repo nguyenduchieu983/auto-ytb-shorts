@@ -25,6 +25,7 @@ import { Media, VoiceOutput, VisualOutput } from '../media';
 import { mockNews, mockScript, mockStoryboard } from '../mock';
 import { CodexContent } from './codex';
 import { localVoice } from './local-voice';
+import { edgeVoice } from './edge-voice';
 
 class StructuredOutputError extends Error {
   constructor(
@@ -585,7 +586,9 @@ export class OpenAiProvider {
     const suffix = `\n\nNguồn:\n${news.map((n) => `${n.title} (ngày nguồn ${n.published_at?.slice(0, 10) || 'chưa xác định'}): ${n.url}`).join('\n')}\n\nGiọng đọc và hình minh họa được tạo bằng AI.\n${output.hashtags.join(' ')}`;
     const attribution =
       this.c.CONTENT_PROVIDER === 'codex'
-        ? '\nGiọng Việt: Piper vi_VN-vais1000-medium; tập dữ liệu VAIS-1000 (CC BY 4.0): https://ieee-dataport.org/documents/vais-1000-vietnamese-speech-synthesis-corpus ; https://creativecommons.org/licenses/by/4.0/ . Âm thanh tổng hợp từ mô hình, hình là đồ họa minh họa.'
+        ? this.c.LOCAL_VOICE_PROVIDER === 'edge'
+          ? '\nGiọng đọc tổng hợp: Microsoft Nam Minh (vi-VN-NamMinhNeural). Hình là đồ họa minh họa.'
+          : '\nGiọng Việt: Piper vi_VN-vais1000-medium; tập dữ liệu VAIS-1000 (CC BY 4.0): https://ieee-dataport.org/documents/vais-1000-vietnamese-speech-synthesis-corpus ; https://creativecommons.org/licenses/by/4.0/ . Âm thanh tổng hợp từ mô hình, hình là đồ họa minh họa.'
         : '';
     return metadataSchema.parse({
       ...output,
@@ -594,7 +597,9 @@ export class OpenAiProvider {
   }
   async voice(w: Work, dir: string, board: Storyboard): Promise<VoiceOutput> {
     if (!this.c.MOCK_OPENAI && this.c.CONTENT_PROVIDER === 'codex')
-      return localVoice(this.c, this.repo, this.media, w, dir, board);
+      return this.c.LOCAL_VOICE_PROVIDER === 'edge'
+        ? edgeVoice(this.c, this.repo, this.media, w, dir, board)
+        : localVoice(this.c, this.repo, this.media, w, dir, board);
     const path = join(dir, this.c.MOCK_OPENAI ? 'voice.wav' : 'voice.mp3');
     const narration = board.scenes.map((s) => s.narration).join(' ');
     if (this.c.MOCK_OPENAI) {

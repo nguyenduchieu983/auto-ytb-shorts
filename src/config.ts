@@ -30,6 +30,12 @@ const schema = z.object({
   CODEX_TIMEOUT_MS: z.coerce.number().int().min(1000).default(300000),
   LOCAL_VOICE_PYTHON: z.string().default('storage/local-voice/Scripts/python.exe'),
   LOCAL_VOICE_MODEL: z.string().default('storage/models/vi_VN-vais1000-medium.onnx'),
+  LOCAL_VOICE_PROVIDER: z.enum(['piper', 'edge']).default('piper'),
+  EDGE_TTS_VOICE: z.literal('vi-VN-NamMinhNeural').default('vi-VN-NamMinhNeural'),
+  EDGE_TTS_RATE: z
+    .string()
+    .regex(/^[+-]\d{1,2}%$/)
+    .default('-10%'),
   OPENAI_TEXT_MODEL: z.string().default('gpt-4.1-mini'),
   OPENAI_SEARCH_MODEL: z.string().default('gpt-4.1'),
   OPENAI_IMAGE_MODEL: z.string().default('gpt-image-1'),

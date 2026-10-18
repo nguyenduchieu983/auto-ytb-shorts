@@ -223,7 +223,16 @@ export class DashboardController {
       },
       content_provider: this.p.c.CONTENT_PROVIDER,
       paid_api_enabled: this.p.c.PAID_API_ENABLED,
-      voice_provider: this.p.c.CONTENT_PROVIDER === 'codex' ? 'local-piper' : 'openai',
+      voice_provider:
+        this.p.c.CONTENT_PROVIDER === 'codex'
+          ? this.p.c.LOCAL_VOICE_PROVIDER === 'edge'
+            ? 'edge-nam-minh'
+            : 'local-piper'
+          : 'openai',
+      voice_rate:
+        this.p.c.CONTENT_PROVIDER === 'codex' && this.p.c.LOCAL_VOICE_PROVIDER === 'edge'
+          ? this.p.c.EDGE_TTS_RATE
+          : null,
       schedule:
         (await new VideoScheduler(this.p.repo, this.p.c).saved())?.enabled ??
         this.p.c.SCHEDULE_ENABLED,

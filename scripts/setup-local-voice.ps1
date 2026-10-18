@@ -4,7 +4,7 @@ if (-not (Test-Path -LiteralPath 'storage/local-voice/Scripts/python.exe')) {
     python -m venv storage/local-voice
     if ($LASTEXITCODE -ne 0) { throw 'Python venv creation failed' }
 }
-& storage/local-voice/Scripts/python.exe -m pip install piper-tts==1.3.0
+& storage/local-voice/Scripts/python.exe -m pip install piper-tts==1.3.0 edge-tts==7.3.1
 if ($LASTEXITCODE -ne 0) { throw 'Piper installation failed' }
 New-Item -ItemType Directory -Force storage/models | Out-Null
 & storage/local-voice/Scripts/python.exe -m piper.download_voices vi_VN-vais1000-medium --download-dir storage/models

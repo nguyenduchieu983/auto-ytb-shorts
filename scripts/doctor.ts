@@ -30,12 +30,26 @@ async function main() {
         }),
         Promise.all([
           access(resolve(c.LOCAL_VOICE_PYTHON)),
-          access(resolve(c.LOCAL_VOICE_MODEL)),
-          access(resolve(c.LOCAL_VOICE_MODEL) + '.json'),
+          ...(c.LOCAL_VOICE_PROVIDER === 'edge'
+            ? [
+                processFile(
+                  resolve(c.LOCAL_VOICE_PYTHON),
+                  ['-c', 'import edge_tts'],
+                  undefined,
+                  10000,
+                ),
+              ]
+            : [
+                access(resolve(c.LOCAL_VOICE_MODEL)),
+                access(resolve(c.LOCAL_VOICE_MODEL) + '.json'),
+              ]),
         ]),
       ])),
     );
-    names.push('codex_chatgpt_login', 'local_piper_voice');
+    names.push(
+      'codex_chatgpt_login',
+      c.LOCAL_VOICE_PROVIDER === 'edge' ? 'edge_nam_minh_dependency' : 'local_piper_voice',
+    );
   }
   const result = Object.fromEntries(
     checks.map((r, i) => [
