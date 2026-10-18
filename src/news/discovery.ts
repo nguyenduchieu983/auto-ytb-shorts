@@ -344,6 +344,7 @@ export class NewsDiscoveryService {
     let candidates: News[] = [],
       items: News[] = [];
     for (const hours of [24, 48, 72]) {
+      if (this.c.CONTENT_PROVIDER === 'codex') break; // RSS/article evidence only, no paid search.
       try {
         candidates = this.mergeSources(candidates, await this.searchWithOpenAI(w, now, hours));
       } catch (error) {

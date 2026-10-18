@@ -30,6 +30,11 @@ async function main() {
   };
   const save = async () => writeFile(join(dir, 'report.json'), JSON.stringify(report, null, 2));
   const ledger = {
+    log: async (_w: Work, message: string) => {
+      report.events ||= [];
+      report.events.push(message);
+      await save();
+    },
     reserve: async (w: Work, model: string, usd: number, max: number) => {
       if (max > 0 && report.costs.reduce((n: number, r: any) => n + r.reserved_usd, 0) + usd > max)
         throw new PermanentError('Preview reservation limit reached');
@@ -67,8 +72,8 @@ async function main() {
     console.log(
       'Voice:',
       report.voice.duration,
-      'seconds; alignment:',
-      report.voice.alignment_coverage,
+      'seconds; timing:',
+      report.voice.timing_method || `ASR alignment ${report.voice.alignment_coverage}`,
     );
     report.visuals = await ai.visuals(w('visuals'), dir, report.storyboard);
     await save();

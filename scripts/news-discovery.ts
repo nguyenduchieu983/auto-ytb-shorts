@@ -29,6 +29,11 @@ async function main() {
   // Isolated live discovery audit: real provider calls, persistent usage ledger,
   // no daily-run state/queue changes and no media, Telegram or YouTube actions.
   const ledger = {
+    log: async (_w: Work, message: string) => {
+      record.events ||= [];
+      record.events.push(message);
+      await save();
+    },
     reserve: async (w: Work, model: string, usd: number, max: number) => {
       if (max > 0 && costs.reduce((n, row) => n + row.reserved_usd, 0) + usd > max)
         throw new PermanentError('Run cost reservation limit reached');

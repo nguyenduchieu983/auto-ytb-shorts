@@ -49,6 +49,7 @@ export interface VoiceOutput {
   mock: boolean;
   words?: (TimedWord & { scene_id: number })[];
   alignment_coverage?: number;
+  timing_method?: string;
 }
 export interface VisualOutput {
   images: { scene_id: number; path: string; overlay_path?: string; fallback: boolean }[];

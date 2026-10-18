@@ -1,6 +1,8 @@
 import { Pool } from 'pg';
 import IORedis from 'ioredis';
 import { loadConfig } from '../src/config';
+import { access } from 'node:fs/promises';
+import { resolve } from 'node:path';
 import { Media, processFile } from '../src/media';
 async function main() {
   const c = loadConfig(),
@@ -20,6 +22,21 @@ async function main() {
     processFile(media.ffprobe, ['-version'], undefined, 10000),
   ]);
   const names = ['postgresql', 'redis', 'ffmpeg', 'ffprobe'];
+  if (!c.MOCK_OPENAI && c.CONTENT_PROVIDER === 'codex') {
+    checks.push(
+      ...(await Promise.allSettled([
+        processFile(c.CODEX_PATH, ['login', 'status'], undefined, 10000).then((output) => {
+          if (!/logged in using chatgpt/i.test(output)) throw new Error('ChatGPT login required');
+        }),
+        Promise.all([
+          access(resolve(c.LOCAL_VOICE_PYTHON)),
+          access(resolve(c.LOCAL_VOICE_MODEL)),
+          access(resolve(c.LOCAL_VOICE_MODEL) + '.json'),
+        ]),
+      ])),
+    );
+    names.push('codex_chatgpt_login', 'local_piper_voice');
+  }
   const result = Object.fromEntries(
     checks.map((r, i) => [
       names[i],
@@ -40,6 +57,8 @@ async function main() {
           telegram: c.MOCK_TELEGRAM ? 'mock' : 'live',
         },
         schedule_enabled: c.SCHEDULE_ENABLED,
+        content_provider: c.CONTENT_PROVIDER,
+        paid_api_enabled: c.PAID_API_ENABLED,
         auto_publish: c.AUTO_PUBLISH,
       },
       null,

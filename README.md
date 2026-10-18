@@ -281,3 +281,38 @@ npm.cmd run test:schedule
 Kiểm tra này tạo rồi xóa schema riêng, thử tám tick đồng thời, rollover UTC+7, thứ tự video, số lượng và outbox. `npm run check` kiểm tra thêm validation, bảo vệ API, tắt lịch, giới hạn batch và phục hồi auto-approval bằng fixtures mock; không chứng minh upload YouTube thật.
 
 Khi tự upload đang được bật cho run, bước rank chỉ chọn tin có ngày xuất bản nguồn đã xác thực, rồi chọn điểm cao nhất trong nhóm đó. Tin thiếu ngày vẫn có thể chọn ở chế độ duyệt thủ công. Nếu không còn tin có ngày, rank dừng NEEDS_REVISION với `AUTO_UPLOAD_NO_DATED_NEWS` trước khi tốn phí TTS/render; không tự bịa ngày hoặc nới gate upload. QC lưu `auto_block_reasons`; logs, tab QC và preview Telegram nêu lý do chưa đủ điều kiện tự upload (ví dụ thiếu ngày nguồn hoặc thời lượng ngoài 45–60 giây). `hard_pass=true` không đồng nghĩa `auto_eligible=true`.
+
+## Chạy bằng quota Codex, không dùng OpenAI API trả phí
+
+Chế độ này dùng `codex exec` đăng nhập ChatGPT cho extraction, novelty/rank, script, verification, storyboard và metadata. Discovery chỉ lấy RSS/bài nguồn, không gọi web search API. Hình dùng card/diagram và chuyển động render local, không gọi Image API. Voice dùng Piper tiếng Việt `vi_VN-vais1000-medium` offline, không gọi TTS/Whisper API. Render/Telegram/YouTube và các gate duyệt/upload vẫn dùng pipeline hiện tại.
+
+Trên Windows, cài Codex CLI và đăng nhập bằng `codex login`; kiểm tra `codex login status` phải là ChatGPT (không phải API key). Sau đó cài voice:
+
+```powershell
+npm.cmd run setup:local-voice
+```
+
+Chọn trong `.env` (không commit):
+
+```dotenv
+CONTENT_PROVIDER=codex
+PAID_API_ENABLED=false
+CODEX_PATH=codex
+CODEX_MODEL=
+CODEX_TIMEOUT_MS=300000
+LOCAL_VOICE_PYTHON=storage/local-voice/Scripts/python.exe
+LOCAL_VOICE_MODEL=storage/models/vi_VN-vais1000-medium.onnx
+MOCK_OPENAI=false
+```
+
+`CODEX_PATH` phải là executable thật, không phải chuỗi shell; nếu startup task không tìm được PATH, đặt đường dẫn tuyệt đối tới `codex.exe`. `CODEX_MODEL` rỗng dùng mặc định CLI với user config đã tắt; có thể đặt model mà tài khoản được phép dùng. Chạy `npm run doctor`, build và restart API/worker sau khi đổi provider. Mặc định `.env.example` vẫn mock/manual/private; chỉ chuyển live khi đã kiểm tra preview. Giữ `.codex/auth.json` riêng trên máy, không copy vào source/storage/logs hay commit.
+
+Codex subprocess không nhận API key/DB/Telegram/YouTube credentials từ env, bỏ user config, ép ChatGPT login, tắt shell/unified-exec/subagents và chạy read-only. Input qua stdin, output theo JSON Schema và vẫn được Zod/logic ứng dụng kiểm tra. Các request được xếp hàng lần lượt trong worker; mỗi request timeout sau 300 giây. Input/schema/output/usage lưu ở `storage/codex/<runId>/rev-<revision>/`. API ledger ghi model `codex:...`, reservation USD bằng 0; đây là quota subscription đang dùng chung với Codex của người dùng, không phải token miễn phí vô hạn. Hết quota/timeout/login lỗi thì FAILED và báo qua cơ chế pipeline; sau khi quota reset/login lại dùng retry, không tự fallback sang API trả phí.
+
+`PAID_API_ENABLED=false` chặn OpenAI HTTP trước khi reserve/gửi request; `CONTENT_PROVIDER=codex` cũng luôn chặn các lời gọi OpenAI API dù flag trả phí bật. Giữ API key cũ trong `.env` không làm phát sinh call trong chế độ Codex. Chi phí subscription/phần cứng/điện không được tính thành reservation USD. Run cũ vẫn giữ chi phí API lịch sử.
+
+Piper tạo và đo từng scene bằng audio thật, ghép thành một file MP3; có thể tổng hợp lại với length_scale 0.7–1.8 để hướng về 55 giây, không tăng tốc file audio hậu kỳ. Không có ASR kiểm chứng phát âm; timing từng cảnh được đo, timing từng từ nội suy và được đánh dấu `measured-scenes-estimated-words`, không phải word alignment đã xác minh. Giọng khác OpenAI, cần nghe preview để đánh giá. Mô hình/model card lưu trong `storage/models`, không commit. Model card ghi dataset VAIS-1000 dùng CC BY 4.0; attribution được thêm vào mô tả YouTube. Dùng offline graphics thay AI illustration nên hình thức khác video cũ.
+
+Kiểm tra `npm run check` dùng mock/stub (bao gồm quota hết, lọc env và chặn HTTP trả phí). `npm run video:preview -- <runId>` chạy preview từ tin đã chọn, không gửi Telegram/upload; trong mode Codex sẽ tiêu quota Codex và tổng hợp/render local. `npm run news:discover` kiểm tra RSS/extraction/rank thực, ghi audit riêng và không tạo run/upload. Hai lệnh này không chứng minh upload YouTube thành công.
+
+Kiểm chứng lần triển khai Codex/local: 81 tests mock/stub pass; request thật qua ChatGPT login thành công; RSS thật trích xuất/rank 23 tin; novelty thật loại được một sự kiện đã có và metadata có attribution. Preview từ tin đã chọn render dài 45,4 giây, 1080×1920, kỹ thuật QC pass, API reservation bằng 0; không gửi Telegram hoặc upload YouTube trong các lượt kiểm tra này. Kiểm chứng kỹ thuật không chứng minh phát âm/word timing hoàn hảo.

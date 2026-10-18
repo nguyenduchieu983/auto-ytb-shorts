@@ -23,6 +23,8 @@ import {
 import { alignNarration } from '../narration';
 import { Media, VoiceOutput, VisualOutput } from '../media';
 import { mockNews, mockScript, mockStoryboard } from '../mock';
+import { CodexContent } from './codex';
+import { localVoice } from './local-voice';
 
 class StructuredOutputError extends Error {
   constructor(
@@ -51,6 +53,8 @@ export class OpenAiProvider {
     return readFile(join('prompts', name + '.md'), 'utf8');
   }
   private async request(w: Work, endpoint: string, body: any, reserve: number): Promise<any> {
+    if (!this.c.PAID_API_ENABLED || this.c.CONTENT_PROVIDER === 'codex')
+      throw new PermanentError('Paid OpenAI API disabled; no subscription-to-API fallback');
     const model = body instanceof FormData ? String(body.get('model')) : body.model;
     const id = await this.repo.reserve(w, model, reserve, this.c.MAX_RUN_COST_USD);
     await this.repo.log?.(
@@ -140,6 +144,18 @@ export class OpenAiProvider {
     const jsonSchema = convert(schema, { $refStrategy: 'none' });
     delete jsonSchema.$schema;
     removeUriFormats(jsonSchema);
+    if (this.c.CONTENT_PROVIDER === 'codex') {
+      const value = await new CodexContent(this.c, this.repo).generate(
+        w,
+        name,
+        jsonSchema,
+        await this.prompt(name),
+        input,
+      );
+      const parsed = schema.safeParse(value);
+      if (!parsed.success) throw new StructuredOutputError(value, name);
+      return parsed.data as z.infer<T>;
+    }
     const r = await this.request(
       w,
       'responses',
@@ -567,9 +583,18 @@ export class OpenAiProvider {
         }
       : await this.structured(w, 'metadata', metadataSchema, { news });
     const suffix = `\n\nNguồn:\n${news.map((n) => `${n.title} (ngày nguồn ${n.published_at?.slice(0, 10) || 'chưa xác định'}): ${n.url}`).join('\n')}\n\nGiọng đọc và hình minh họa được tạo bằng AI.\n${output.hashtags.join(' ')}`;
-    return metadataSchema.parse({ ...output, description: output.description + suffix });
+    const attribution =
+      this.c.CONTENT_PROVIDER === 'codex'
+        ? '\nGiọng Việt: Piper vi_VN-vais1000-medium; tập dữ liệu VAIS-1000 (CC BY 4.0): https://ieee-dataport.org/documents/vais-1000-vietnamese-speech-synthesis-corpus ; https://creativecommons.org/licenses/by/4.0/ . Âm thanh tổng hợp từ mô hình, hình là đồ họa minh họa.'
+        : '';
+    return metadataSchema.parse({
+      ...output,
+      description: output.description + suffix + attribution,
+    });
   }
   async voice(w: Work, dir: string, board: Storyboard): Promise<VoiceOutput> {
+    if (!this.c.MOCK_OPENAI && this.c.CONTENT_PROVIDER === 'codex')
+      return localVoice(this.c, this.repo, this.media, w, dir, board);
     const path = join(dir, this.c.MOCK_OPENAI ? 'voice.wav' : 'voice.mp3');
     const narration = board.scenes.map((s) => s.narration).join(' ');
     if (this.c.MOCK_OPENAI) {
@@ -662,7 +687,11 @@ export class OpenAiProvider {
     for (const scene of board.scenes) {
       let bytes: Buffer | undefined;
       let fallback = false;
-      if (!this.c.MOCK_OPENAI && scene.visual_type === 'image') {
+      if (
+        !this.c.MOCK_OPENAI &&
+        this.c.CONTENT_PROVIDER === 'openai' &&
+        scene.visual_type === 'image'
+      ) {
         try {
           const r = await this.request(
             w,
@@ -695,7 +724,9 @@ export class OpenAiProvider {
         scene.source_label,
         this.c.MOCK_OPENAI,
         bytes,
-        scene.visual_type,
+        this.c.CONTENT_PROVIDER === 'codex' && scene.visual_type === 'image'
+          ? 'motion-card'
+          : scene.visual_type,
         scene.scene_id,
         scene.visual_labels,
       );

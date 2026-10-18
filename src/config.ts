@@ -23,6 +23,13 @@ const schema = z.object({
   MOCK_YOUTUBE: bool.default('true'),
   MOCK_TELEGRAM: bool.default('true'),
   OPENAI_API_KEY: z.string().default(''),
+  CONTENT_PROVIDER: z.enum(['openai', 'codex']).default('openai'),
+  PAID_API_ENABLED: bool.default('true'),
+  CODEX_PATH: z.string().default('codex'),
+  CODEX_MODEL: z.string().default(''),
+  CODEX_TIMEOUT_MS: z.coerce.number().int().min(1000).default(300000),
+  LOCAL_VOICE_PYTHON: z.string().default('storage/local-voice/Scripts/python.exe'),
+  LOCAL_VOICE_MODEL: z.string().default('storage/models/vi_VN-vais1000-medium.onnx'),
   OPENAI_TEXT_MODEL: z.string().default('gpt-4.1-mini'),
   OPENAI_SEARCH_MODEL: z.string().default('gpt-4.1'),
   OPENAI_IMAGE_MODEL: z.string().default('gpt-image-1'),
@@ -56,7 +63,12 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
   const c = schema.parse(env);
   new Intl.DateTimeFormat('en-CA', { timeZone: c.APP_TIMEZONE });
   c.STORAGE_ROOT = resolve(c.STORAGE_ROOT);
-  if (!c.MOCK_OPENAI && !c.OPENAI_API_KEY) throw new Error('OPENAI_API_KEY is required');
+  if (!c.MOCK_OPENAI && c.CONTENT_PROVIDER === 'openai' && !c.OPENAI_API_KEY)
+    throw new Error('OPENAI_API_KEY is required');
+  if (!c.MOCK_OPENAI && c.CONTENT_PROVIDER === 'openai' && !c.PAID_API_ENABLED)
+    throw new Error(
+      'OpenAI provider requires PAID_API_ENABLED; select codex for subscription/local mode',
+    );
   if (
     !c.MOCK_YOUTUBE &&
     (!c.GOOGLE_CLIENT_ID || !c.GOOGLE_CLIENT_SECRET || !c.YOUTUBE_REFRESH_TOKEN)

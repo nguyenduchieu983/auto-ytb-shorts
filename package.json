@@ -13,6 +13,7 @@
     "dev:worker": "tsx src/worker.ts",
     "migrate": "tsx scripts/migrate.ts",
     "setup": "tsx scripts/init-env.ts",
+    "setup:local-voice": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/setup-local-voice.ps1",
     "doctor": "tsx scripts/doctor.ts",
     "db:init": "tsx scripts/init-db.ts",
     "test:redis": "tsx scripts/redis-smoke.ts",
