@@ -8,6 +8,7 @@ import { parseTelegramUpdate } from './providers/telegram';
 import { handleTelegramCommand } from './telegram-commands';
 import { randomUUID } from 'node:crypto';
 import { VideoScheduler } from './video-schedule';
+import { ReelsService } from './reels';
 
 export class QueueRuntime {
   private connection: IORedis;
@@ -19,6 +20,7 @@ export class QueueRuntime {
   private polling?: TelegramPolling;
   private heartbeatTimer?: NodeJS.Timeout;
   private heartbeatId = randomUUID();
+  private reelTask?: Promise<void>;
   constructor(private pipeline: Pipeline) {
     this.connection = new IORedis(pipeline.c.REDIS_URL, { maxRetriesPerRequest: null });
     this.queues = Object.fromEntries(
@@ -106,6 +108,15 @@ export class QueueRuntime {
       const scheduler = new VideoScheduler(this.pipeline.repo, this.pipeline.c);
       await scheduler.publishReady();
       await scheduler.tick();
+      const reels = new ReelsService(this.pipeline.repo, this.pipeline.c);
+      await reels.tick();
+      if (!this.reelTask)
+        this.reelTask = reels
+          .processNext()
+          .catch((e) => console.error(safeError(e, this.pipeline.c)))
+          .finally(() => {
+            this.reelTask = undefined;
+          });
       for (const event of await this.pipeline.repo.outbox()) {
         const q = this.queues[this.queue(event)],
           existing = await q.getJob(event.id);
@@ -167,6 +178,7 @@ export class QueueRuntime {
     if (this.heartbeatTimer) clearInterval(this.heartbeatTimer);
     await this.polling?.close();
     while (this.pumping) await new Promise((resolve) => setTimeout(resolve, 25));
+    await this.reelTask;
     await Promise.all(this.workers.map((w) => w.close()));
     await Promise.all(Object.values(this.queues).map((q) => q.close()));
     await this.connection.quit();

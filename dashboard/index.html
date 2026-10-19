@@ -6,6 +6,7 @@
     <title>Shorts Studio · Production</title>
     <link rel="stylesheet" href="/dashboard/style.css" />
     <script defer src="/dashboard/app.js"></script>
+    <script defer src="/dashboard/reels.js"></script>
   </head>
   <body>
     <section id="login" class="login" hidden>
@@ -35,6 +36,7 @@
         >
         <p class="nav-label">WORKSPACE</p>
         <button class="nav active" id="production-nav"><span>◫</span> Sản xuất video</button
+        ><button class="nav" id="reels-nav"><span>▷</span> Facebook Reels</button
         ><button class="nav" id="system-nav"><span>◎</span> Hệ thống & logs</button>
         <div class="side-bottom">
           <div id="side-mode"></div>
@@ -140,6 +142,53 @@
                   <h2>Chọn một video để theo dõi</h2>
                   <p>Xem tiến độ, nội dung, bản dựng và logs của từng revision.</p>
                 </div>
+              </section>
+            </div>
+          </section>
+          <section id="reels" hidden>
+            <h2>Reels triết lý · Chuẩn bị video để đăng Facebook thủ công</h2>
+            <p class="muted">
+              Nam Minh trầm chậm · Nền tối, nét vẽ trắng, chữ vàng · Không kết nối Facebook, không
+              tự upload.
+            </p>
+            <form id="reels-form" class="schedule-panel">
+              <div class="schedule-fields">
+                <label class="schedule-check"
+                  ><input id="reels-enabled" type="checkbox" /> Bật lịch mỗi ngày</label
+                >
+                <label
+                  >Giờ bắt đầu · UTC+7<input id="reels-time" type="time" required value="19:00"
+                /></label>
+                <label
+                  >Số video/ngày<input
+                    id="reels-count"
+                    type="number"
+                    min="1"
+                    max="10"
+                    required
+                    value="2"
+                /></label>
+                <button id="reels-save" class="primary" type="submit">Lưu cấu hình</button>
+                <button id="reels-now" type="button" class="quiet">Tạo một batch ngay</button>
+              </div>
+              <p class="hint" id="reels-info"></p>
+              <p class="hint">
+                Máy và worker cần chạy. Mở máy sau giờ hẹn sẽ tạo bù trong ngày, không bù ngày cũ.
+                Mỗi ngày một batch; đổi giờ/số lượng áp dụng batch chưa tạo. Tắt lịch tạm dừng video
+                lịch còn chờ; video đang chạy vẫn hoàn tất. Batch thủ công là yêu cầu thêm, không
+                trừ số video theo lịch.
+              </p>
+            </form>
+            <div class="board reels-board">
+              <section class="run-panel">
+                <div id="reels-list" class="run-list"></div>
+                <div class="pagination">
+                  <button id="reels-prev" class="quiet">← Trước</button><span id="reels-page"></span
+                  ><button id="reels-next" class="quiet">Sau →</button>
+                </div>
+              </section>
+              <section id="reels-detail" class="detail-panel">
+                <div class="empty">Chọn video để xem tiến độ, tải MP4 và copy nội dung đăng.</div>
               </section>
             </div>
           </section>

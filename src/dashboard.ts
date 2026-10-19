@@ -19,6 +19,7 @@ import { AdminGuard, equal, hasSession, sameOrigin, sessionCookie } from './auth
 import { Pipeline, safeError } from './engine';
 import { STEPS } from './domain';
 import { VideoScheduler } from './video-schedule';
+import { ReelsService } from './reels';
 
 const statuses = [
   'PENDING',
@@ -67,6 +68,9 @@ export class DashboardPublicController {
   @Get('style.css') async style(@Res() res: any) {
     res.type('css').send(await readFile(resolve('dashboard/style.css'), 'utf8'));
   }
+  @Get('reels.js') async reelsScript(@Res() res: any) {
+    res.type('js').send(await readFile(resolve('dashboard/reels.js'), 'utf8'));
+  }
   @Get('session') session(@Req() req: any, @Res() res: any) {
     res.set('Cache-Control', 'no-store').json({ authenticated: hasSession(req, this.p.c) });
   }
@@ -100,6 +104,64 @@ export class DashboardPublicController {
 @UseGuards(AdminGuard)
 export class DashboardController {
   constructor(@Inject('PIPELINE') private p: Pipeline) {}
+  @Get('reels') async reels(@Query('page') page?: string) {
+    return clean(
+      await new ReelsService(this.p.repo, this.p.c).view(
+        z.coerce.number().int().min(1).max(10000).default(1).parse(page),
+      ),
+      this.p,
+    );
+  }
+  @Post('reels/settings') async saveReels(@Body() body: unknown) {
+    return new ReelsService(this.p.repo, this.p.c).save(body);
+  }
+  @Post('reels/batch') async reelsBatch(@Body() body: unknown) {
+    const { request_key } = z.object({ request_key: z.string().uuid() }).strict().parse(body);
+    return new ReelsService(this.p.repo, this.p.c).manual(request_key);
+  }
+  @Get('reels/:id') async reelDetail(@Param('id') id: string) {
+    return clean(await new ReelsService(this.p.repo, this.p.c).detail(id), this.p);
+  }
+  @Post('reels/:id/retry') async retryReel(@Param('id') id: string) {
+    return new ReelsService(this.p.repo, this.p.c).retry(id);
+  }
+  @Get('reels/:id/assets/:kind') async reelAsset(
+    @Param('id') id: string,
+    @Param('kind') kind: string,
+    @Query('download') download: string,
+    @Res() res: any,
+  ) {
+    const job = await new ReelsService(this.p.repo, this.p.c).detail(id);
+    if (job.status !== 'READY') throw new HttpException('Video chưa hoàn tất', 404);
+    const fields: Record<string, string> = {
+      video: 'path',
+      thumbnail: 'thumbnail',
+      post: 'post_text',
+      json: 'post_json',
+    };
+    if (!Object.hasOwn(fields, kind)) throw new HttpException('Asset không hợp lệ', 404);
+    let full: string;
+    try {
+      full = await realpath(this.p.storage.safe(job.output?.[fields[kind]] || ''));
+      const rel = relative(await realpath(this.p.c.STORAGE_ROOT), full);
+      if (
+        !rel ||
+        rel === '..' ||
+        rel.startsWith('..\\') ||
+        rel.startsWith('../') ||
+        isAbsolute(rel)
+      )
+        throw new Error('Outside storage');
+    } catch {
+      throw new HttpException('Asset unavailable', 404);
+    }
+    res.set('Cache-Control', 'private, no-store').set('X-Content-Type-Options', 'nosniff');
+    if (download === '1')
+      res.attachment(
+        `reel-${id}.${({ video: 'mp4', thumbnail: 'png', post: 'txt', json: 'json' } as Record<string, string>)[kind]}`,
+      );
+    res.sendFile(full);
+  }
   @Get('schedule') schedule() {
     return new VideoScheduler(this.p.repo, this.p.c).view();
   }

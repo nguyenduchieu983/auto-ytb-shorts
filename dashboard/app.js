@@ -618,16 +618,21 @@ $('next').addEventListener('click', () => {
   state.page++;
   refresh();
 });
-for (const id of ['production-nav', 'system-nav'])
+for (const id of ['production-nav', 'system-nav', 'reels-nav'])
   $(id).addEventListener('click', () => {
     state.system = id === 'system-nav';
-    $('production').hidden = state.system;
+    const reelsActive = id === 'reels-nav';
+    $('runtime-strip').hidden = reelsActive;
+    $('production').hidden = state.system || reelsActive;
+    $('reels').hidden = !reelsActive;
     $('system').hidden = !state.system;
-    $('create').hidden = state.system;
-    $(id).classList.add('active');
-    $(state.system ? 'production-nav' : 'system-nav').classList.remove('active');
+    $('create').hidden = state.system || reelsActive;
+    for (const nav of ['production-nav', 'system-nav', 'reels-nav'])
+      $(nav).classList.toggle('active', nav === id);
     $('breadcrumb').textContent =
-      'Workspace / ' + (state.system ? 'Hệ thống & logs' : 'Sản xuất video');
+      'Workspace / ' +
+      (state.system ? 'Hệ thống & logs' : reelsActive ? 'Facebook Reels' : 'Sản xuất video');
+    if (reelsActive) window.refreshReels?.();
     refresh();
   });
 document.addEventListener('visibilitychange', () => {

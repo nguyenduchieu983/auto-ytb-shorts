@@ -24,6 +24,7 @@ export async function migrate(pool: Pool, memory = false): Promise<void> {
     await client.query(await readFile(resolve('migrations/002_manual_runs.sql'), 'utf8'));
     await client.query(await readFile(resolve('migrations/003_runtime.sql'), 'utf8'));
     await client.query(await readFile(resolve('migrations/004_schedule.sql'), 'utf8'));
+    await client.query(await readFile(resolve('migrations/005_reels.sql'), 'utf8'));
   } finally {
     if (!memory) await client.query('SELECT pg_advisory_unlock(74619320)');
     client.release();
