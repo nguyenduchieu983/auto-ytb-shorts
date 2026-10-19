@@ -15,7 +15,7 @@ async def main():
         try:
             communicate = edge_tts.Communicate(
                 request["narration"], voice=request["voice"], rate=request["rate"],
-                pitch="-2Hz", boundary="WordBoundary", connect_timeout=10, receive_timeout=45)
+                pitch=request["pitch"], boundary="WordBoundary", connect_timeout=10, receive_timeout=45)
             await asyncio.wait_for(communicate.save(str(audio), str(boundaries)), timeout=90)
             rows = [json.loads(line) for line in boundaries.read_text(encoding="utf-8").splitlines() if line.strip()]
             words = [{"word": row["text"], "start": row["offset"] / 10000000,

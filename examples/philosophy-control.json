@@ -1,0 +1,31 @@
+{
+  "title": ["ĐỪNG ÔM", "CẢ BẦU TRỜI"],
+  "source": "https://classics.mit.edu/Epictetus/epicench.html",
+  "source_note": "Lời mới lấy cảm hứng từ Enchiridion, mục 1: phân biệt điều thuộc hành động của mình và điều ngoài quyền mình. Các ví dụ và ẩn dụ trong video do người viết thêm; không phải lời trích của Epictetus.",
+  "scenes": [
+    {
+      "art": "burden",
+      "narration": "Có những ngày, bạn mệt không phải vì làm quá nhiều, mà vì muốn mọi chuyện đều theo ý mình."
+    },
+    {
+      "art": "noise",
+      "narration": "Một lời chê cũng mang về nghĩ mãi. Một chuyện chưa xảy ra, đã khiến cả đêm không ngủ."
+    },
+    {
+      "art": "journal",
+      "narration": "Triết lý Khắc Kỷ gợi nhắc một điều: hãy phân biệt việc mình có thể làm, và điều nằm ngoài quyền mình."
+    },
+    {
+      "art": "rain",
+      "narration": "Bạn không thể ra lệnh cho cơn mưa dừng lại. Nhưng bạn có thể mở ô, hoặc chọn một chỗ trú."
+    },
+    {
+      "art": "steps",
+      "narration": "Với cuộc sống cũng vậy. Bớt chạy theo lời người khác, dành sức làm tốt một việc nhỏ hôm nay."
+    },
+    {
+      "art": "peace",
+      "narration": "Buông điều ngoài tầm tay, không có nghĩa là bỏ cuộc. Đó là giữ sức cho điều xứng đáng. Đừng ôm cả bầu trời. Hãy bắt đầu từ bước chân của mình."
+    }
+  ]
+}

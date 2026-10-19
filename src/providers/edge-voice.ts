@@ -28,11 +28,12 @@ export async function edgeVoice(
       narration: board.scenes.map((s) => s.narration).join(' '),
       voice: c.EDGE_TTS_VOICE,
       rate: c.EDGE_TTS_RATE,
+      pitch: c.EDGE_TTS_PITCH,
     }),
   );
   await repo.log(
     w,
-    `Edge voice ${c.EDGE_TTS_VOICE} started; rate=${c.EDGE_TTS_RATE}, pitch=-2Hz; online, no OpenAI API; no speed-up to fit duration`,
+    `Edge voice ${c.EDGE_TTS_VOICE} started; rate=${c.EDGE_TTS_RATE}, pitch=${c.EDGE_TTS_PITCH}; online, no OpenAI API; no speed-up to fit duration`,
   );
   await processFile(
     resolve(c.LOCAL_VOICE_PYTHON),

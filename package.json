@@ -26,7 +26,8 @@
     "format": "prettier --write src scripts test dashboard package.json tsconfig.json README.md",
     "oauth": "tsx scripts/oauth.ts",
     "news:discover": "tsx scripts/news-discovery.ts",
-    "video:preview": "tsx scripts/quality-preview.ts"
+    "video:preview": "tsx scripts/quality-preview.ts",
+    "video:philosophy": "tsx scripts/philosophy-preview.ts"
   },
   "dependencies": {
     "@nestjs/common": "^11.1.0",

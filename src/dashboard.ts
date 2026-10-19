@@ -233,6 +233,10 @@ export class DashboardController {
         this.p.c.CONTENT_PROVIDER === 'codex' && this.p.c.LOCAL_VOICE_PROVIDER === 'edge'
           ? this.p.c.EDGE_TTS_RATE
           : null,
+      voice_pitch:
+        this.p.c.CONTENT_PROVIDER === 'codex' && this.p.c.LOCAL_VOICE_PROVIDER === 'edge'
+          ? this.p.c.EDGE_TTS_PITCH
+          : null,
       schedule:
         (await new VideoScheduler(this.p.repo, this.p.c).saved())?.enabled ??
         this.p.c.SCHEDULE_ENABLED,

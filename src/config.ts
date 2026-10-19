@@ -35,7 +35,11 @@ const schema = z.object({
   EDGE_TTS_RATE: z
     .string()
     .regex(/^[+-]\d{1,2}%$/)
-    .default('-10%'),
+    .default('-15%'),
+  EDGE_TTS_PITCH: z
+    .string()
+    .regex(/^[+-]\d{1,2}Hz$/)
+    .default('-15Hz'),
   OPENAI_TEXT_MODEL: z.string().default('gpt-4.1-mini'),
   OPENAI_SEARCH_MODEL: z.string().default('gpt-4.1'),
   OPENAI_IMAGE_MODEL: z.string().default('gpt-image-1'),

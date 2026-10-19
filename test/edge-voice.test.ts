@@ -21,10 +21,11 @@ test('Nam Minh service word boundaries preserve narration and reject missing or 
   );
 });
 
-test('Nam Minh request keeps selected -10% cadence and does not require Piper model', async () => {
+test('Nam Minh request preserves selected deep slow voice without requiring Piper model', async () => {
   const { c, pool } = await setup();
   c.LOCAL_VOICE_PROVIDER = 'edge';
-  c.EDGE_TTS_RATE = '-10%';
+  c.EDGE_TTS_RATE = '-15%';
+  c.EDGE_TTS_PITCH = '-15Hz';
   c.LOCAL_VOICE_MODEL = 'missing-piper-model.onnx';
   const board = mockStoryboard(mockScript(mockNews(new Date()).slice(0, 1)));
   await mkdir(c.STORAGE_ROOT, { recursive: true });
@@ -43,7 +44,8 @@ test('Nam Minh request keeps selected -10% cadence and does not require Piper mo
       ),
     );
     const input = JSON.parse(await readFile(join(dir, 'edge-voice-input.json'), 'utf8'));
-    assert.equal(input.rate, '-10%');
+    assert.equal(input.rate, '-15%');
+    assert.equal(input.pitch, '-15Hz');
     assert.equal(input.voice, 'vi-VN-NamMinhNeural');
     assert.equal(input.narration, board.scenes.map((s) => s.narration).join(' '));
   } finally {

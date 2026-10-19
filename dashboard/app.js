@@ -113,7 +113,7 @@ function runtimeView(r) {
     descriptions.discover = 'Đọc RSS và bài nguồn, xử lý bằng quota Codex';
     descriptions.voice =
       r.voice_provider === 'edge-nam-minh'
-        ? `Nam Minh ${r.voice_rate}; đọc liền mạch, căn theo word boundaries`
+        ? `Nam Minh ${r.voice_rate}, tông ${r.voice_pitch}; đọc liền mạch, căn theo word boundaries`
         : 'Piper local; đo thời lượng cảnh, ước lượng timing từng từ';
     descriptions.visuals = 'Card/diagram và typography render local';
   }
