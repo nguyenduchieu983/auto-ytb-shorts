@@ -1,7 +1,9 @@
 import type { Pipeline } from './engine';
 import type { TelegramCommand } from './providers/telegram';
+import { PermanentError } from './domain';
 
 export async function handleTelegramCommand(p: Pipeline, cmd: TelegramCommand): Promise<string> {
+  if (!p.c.TELEGRAM_ENABLED) throw new PermanentError('Telegram disabled; use web dashboard');
   if (cmd.action === 'gen-new-video') {
     const run = await p.run(new Date(), cmd.requestKey);
     return `Đã nhận yêu cầu tạo video riêng. Mỗi tin nhắn mới tạo một run mới; xong sẽ gửi preview để duyệt.\n${run.id} revision ${run.revision}: ${run.status}\n/status ${run.id} ${run.revision}`;

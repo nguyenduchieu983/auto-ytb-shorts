@@ -12,6 +12,7 @@ export interface ExistingTelegramCommand {
   actor: string;
 }
 export function parseTelegramUpdate(update: any, c: Config): TelegramCommand {
+  if (!c.TELEGRAM_ENABLED) throw new PermanentError('Telegram disabled; use web dashboard');
   const msg = update.message,
     chat = String(msg?.chat?.id),
     user = String(msg?.from?.id);
@@ -59,6 +60,7 @@ export function parseTelegramUpdate(update: any, c: Config): TelegramCommand {
 export class TelegramProvider {
   constructor(private c: Config) {}
   async call(method: string, body: any) {
+    if (!this.c.TELEGRAM_ENABLED) throw new PermanentError('Telegram disabled');
     const r = await fetch(`https://api.telegram.org/bot${this.c.TELEGRAM_BOT_TOKEN}/${method}`, {
       method: 'POST',
       ...(body instanceof FormData
@@ -75,6 +77,8 @@ export class TelegramProvider {
     return data.result;
   }
   async preview(run: Run, video: any, metadata: any, news: any[], qc: any, cost: number) {
+    if (!this.c.TELEGRAM_ENABLED)
+      return { disabled: true, channel: 'dashboard', preview_path: video.path };
     const autoStatus = qc.auto_eligible
       ? 'Đủ điều kiện tự upload nếu đã bật lịch/auto-publish'
       : `Chờ duyệt: ${(qc.auto_block_reasons || ['Chưa đủ điều kiện tự upload']).join('; ')}`;
@@ -103,7 +107,7 @@ export class TelegramProvider {
     return { mock: false, message_id: message.message_id };
   }
   async notify(text: string) {
-    if (this.c.MOCK_TELEGRAM) return;
+    if (!this.c.TELEGRAM_ENABLED || this.c.MOCK_TELEGRAM) return;
     await this.call('sendMessage', {
       chat_id: this.c.TELEGRAM_ADMIN_CHAT_ID,
       text: text.slice(0, 4000),

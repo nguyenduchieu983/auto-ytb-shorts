@@ -280,7 +280,11 @@ export class DashboardController {
       inbox,
       modes: {
         openai: this.p.c.MOCK_OPENAI ? 'mock' : 'live',
-        telegram: this.p.c.MOCK_TELEGRAM ? 'mock' : 'live',
+        telegram: !this.p.c.TELEGRAM_ENABLED
+          ? 'disabled'
+          : this.p.c.MOCK_TELEGRAM
+            ? 'mock'
+            : 'live',
         youtube: this.p.c.MOCK_YOUTUBE ? 'mock' : 'live',
       },
       content_provider: this.p.c.CONTENT_PROVIDER,
@@ -307,7 +311,7 @@ export class DashboardController {
       auto_publish: this.p.c.AUTO_PUBLISH,
       privacy: this.p.c.YOUTUBE_PRIVACY_STATUS,
       timezone: this.p.c.APP_TIMEZONE,
-      telegram_mode: this.p.c.TELEGRAM_UPDATE_MODE,
+      telegram_mode: this.p.c.TELEGRAM_ENABLED ? this.p.c.TELEGRAM_UPDATE_MODE : 'disabled',
       max_cost: this.p.c.MAX_RUN_COST_USD,
     };
   }

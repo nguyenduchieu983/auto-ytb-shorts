@@ -22,6 +22,7 @@ const schema = z.object({
   MOCK_OPENAI: bool.default('true'),
   MOCK_YOUTUBE: bool.default('true'),
   MOCK_TELEGRAM: bool.default('true'),
+  TELEGRAM_ENABLED: bool.default('true'),
   OPENAI_API_KEY: z.string().default(''),
   CONTENT_PROVIDER: z.enum(['openai', 'codex']).default('openai'),
   PAID_API_ENABLED: bool.default('true'),
@@ -87,6 +88,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
   if (!c.MOCK_YOUTUBE && c.MOCK_OPENAI)
     throw new Error('Real YouTube upload cannot use mock content');
   if (
+    c.TELEGRAM_ENABLED &&
     !c.MOCK_TELEGRAM &&
     (!c.TELEGRAM_BOT_TOKEN ||
       !c.TELEGRAM_ADMIN_CHAT_ID ||
@@ -96,7 +98,10 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     throw new Error(
       'Telegram token/chat/users are required; webhook mode also needs a secret of 32+ chars',
     );
-  if (c.AUTO_PUBLISH && (c.MOCK_OPENAI || c.MOCK_YOUTUBE || c.MOCK_TELEGRAM))
+  if (
+    c.AUTO_PUBLISH &&
+    (c.MOCK_OPENAI || c.MOCK_YOUTUBE || (c.TELEGRAM_ENABLED && c.MOCK_TELEGRAM))
+  )
     throw new Error('AUTO_PUBLISH requires all live providers');
   return c;
 }

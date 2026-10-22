@@ -51,7 +51,11 @@ export class VideoScheduler {
     private c: Config,
   ) {}
   private live() {
-    return !this.c.MOCK_OPENAI && !this.c.MOCK_YOUTUBE && !this.c.MOCK_TELEGRAM;
+    return (
+      !this.c.MOCK_OPENAI &&
+      !this.c.MOCK_YOUTUBE &&
+      (!this.c.TELEGRAM_ENABLED || !this.c.MOCK_TELEGRAM)
+    );
   }
   async saved(): Promise<VideoSchedule | null> {
     const row = (await this.repo.pool.query('SELECT settings FROM video_schedule WHERE id=1'))

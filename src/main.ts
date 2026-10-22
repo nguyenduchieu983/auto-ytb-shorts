@@ -97,6 +97,7 @@ class PublicController {
   }
   @Post('telegram/webhook') async webhook(@Req() req: any, @Body() body: any) {
     if (
+      !this.p.c.TELEGRAM_ENABLED ||
       this.p.c.MOCK_TELEGRAM ||
       this.p.c.TELEGRAM_UPDATE_MODE !== 'webhook' ||
       !equal(

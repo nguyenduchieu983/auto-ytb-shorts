@@ -68,7 +68,7 @@ async function main() {
         modes: {
           openai: c.MOCK_OPENAI ? 'mock' : 'live',
           youtube: c.MOCK_YOUTUBE ? 'mock' : 'live',
-          telegram: c.MOCK_TELEGRAM ? 'mock' : 'live',
+          telegram: !c.TELEGRAM_ENABLED ? 'disabled' : c.MOCK_TELEGRAM ? 'mock' : 'live',
         },
         schedule_enabled: c.SCHEDULE_ENABLED,
         content_provider: c.CONTENT_PROVIDER,

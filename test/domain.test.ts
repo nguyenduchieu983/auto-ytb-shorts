@@ -85,7 +85,11 @@ test('Live upload rejects mock content at startup', () => {
   );
 });
 test('Telegram requires both admin chat and admin user and exact revision', () => {
-  const c = { TELEGRAM_ADMIN_CHAT_ID: '10', TELEGRAM_ADMIN_USER_IDS: '20' } as any;
+  const c = {
+    TELEGRAM_ENABLED: true,
+    TELEGRAM_ADMIN_CHAT_ID: '10',
+    TELEGRAM_ADMIN_USER_IDS: '20',
+  } as any;
   const u = { message: { chat: { id: 10 }, from: { id: 20 }, text: '/publish abc 2' } };
   assert.equal(parseTelegramUpdate(u, c).revision, 2);
   assert.throws(() =>

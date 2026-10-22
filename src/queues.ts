@@ -85,7 +85,11 @@ export class QueueRuntime {
     this.heartbeatTimer = setInterval(() => {
       this.heartbeat().catch((e) => console.error(safeError(e, this.pipeline.c)));
     }, 15000);
-    if (!this.pipeline.c.MOCK_TELEGRAM && this.pipeline.c.TELEGRAM_UPDATE_MODE === 'polling') {
+    if (
+      this.pipeline.c.TELEGRAM_ENABLED &&
+      !this.pipeline.c.MOCK_TELEGRAM &&
+      this.pipeline.c.TELEGRAM_UPDATE_MODE === 'polling'
+    ) {
       this.polling = new TelegramPolling(this.pipeline.c, this.pipeline.repo.pool);
       this.polling.start();
     }
@@ -139,6 +143,7 @@ export class QueueRuntime {
     }
   }
   private async telegramInbox() {
+    if (!this.pipeline.c.TELEGRAM_ENABLED) return;
     // Transaction lock keeps command handling serialized across worker instances.
     const lock = await this.pipeline.repo.pool.connect();
     try {

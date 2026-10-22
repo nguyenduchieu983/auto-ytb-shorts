@@ -1,5 +1,7 @@
 # AI & Tech YouTube Shorts
 
+Chỉ thao tác qua web: đặt `TELEGRAM_ENABLED=false` trong `.env`, build và restart cả API/worker. App không polling, không nhận webhook, không xử lý inbox hoặc gửi preview/thông báo Telegram; video vẫn chờ duyệt trên dashboard và lịch YouTube/Reels giữ cấu hình hiện tại. Không cần thông tin đăng nhập Telegram khi đã tắt. Cờ này độc lập `MOCK_TELEGRAM`; bật lại cần chủ động xử lý backlog cũ trước khi nhận lệnh.
+
 Hướng dẫn đầy đủ trong một file: [Vận hành local và chuyển máy](HUONG_DAN_VAN_HANH_VA_CHUYEN_MAY.md). Bắt đầu thủ công qua Telegram bằng `/gen-new-video`; cron mặc định tắt.
 
 Pipeline NestJS/TypeScript tạo một bản tin tiếng Việt mỗi ngày: tìm nguồn → chọn 3 mục → script/verify → storyboard → voice + visuals → subtitle → FFmpeg → QC → Telegram review → YouTube.

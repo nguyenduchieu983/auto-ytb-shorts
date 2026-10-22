@@ -28,6 +28,7 @@ export class TelegramPolling {
     return data.result;
   }
   async pollOnce(): Promise<void> {
+    if (!this.c.TELEGRAM_ENABLED) return;
     const client = await this.pool.connect();
     let acquired = false;
     try {
@@ -73,6 +74,7 @@ export class TelegramPolling {
     }
   }
   start() {
+    if (!this.c.TELEGRAM_ENABLED) return;
     if (this.task) return;
     this.task = (async () => {
       while (!this.stopped) {
