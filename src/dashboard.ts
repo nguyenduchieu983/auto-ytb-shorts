@@ -20,6 +20,7 @@ import { Pipeline, safeError } from './engine';
 import { STEPS } from './domain';
 import { VideoScheduler } from './video-schedule';
 import { ReelsService } from './reels';
+import { CodexLogin } from './codex-login';
 
 const statuses = [
   'PENDING',
@@ -71,6 +72,9 @@ export class DashboardPublicController {
   @Get('reels.js') async reelsScript(@Res() res: any) {
     res.type('js').send(await readFile(resolve('dashboard/reels.js'), 'utf8'));
   }
+  @Get('codex-login.js') async codexScript(@Res() res: any) {
+    res.type('js').send(await readFile(resolve('dashboard/codex-login.js'), 'utf8'));
+  }
   @Get('session') session(@Req() req: any, @Res() res: any) {
     res.set('Cache-Control', 'no-store').json({ authenticated: hasSession(req, this.p.c) });
   }
@@ -103,7 +107,25 @@ export class DashboardPublicController {
 @Controller('dashboard/api')
 @UseGuards(AdminGuard)
 export class DashboardController {
-  constructor(@Inject('PIPELINE') private p: Pipeline) {}
+  private codexLogin: CodexLogin;
+  constructor(@Inject('PIPELINE') private p: Pipeline) {
+    this.codexLogin = new CodexLogin(p.c);
+  }
+  onModuleDestroy() {
+    this.codexLogin.close();
+  }
+  @Get('codex/login') codexLoginStatus() {
+    return this.codexLogin.view();
+  }
+  @Post('codex/login/start') codexLoginStart() {
+    return this.codexLogin.start();
+  }
+  @Post('codex/login/check') codexLoginCheck() {
+    return this.codexLogin.check();
+  }
+  @Post('codex/login/cancel') codexLoginCancel() {
+    return this.codexLogin.cancel();
+  }
   @Get('reels') async reels(@Query('page') page?: string) {
     return clean(
       await new ReelsService(this.p.repo, this.p.c).view(

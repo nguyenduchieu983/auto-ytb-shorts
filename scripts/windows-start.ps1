@@ -57,7 +57,7 @@ try {
         if ($apiExisting.Count -eq 0 -and $workerExisting.Count -eq 0) {
             if ((Invoke-Node @('--import', 'tsx', 'scripts/local-redis.ts')) -ne 0) { Write-Startup "Redis unavailable (attempt $attempt)."; Start-Sleep -Seconds 10; continue }
         }
-        if ((Invoke-Node @('--import', 'tsx', 'scripts/doctor.ts')) -ne 0) { Write-Startup "Dependencies unavailable (attempt $attempt)."; Start-Sleep -Seconds 10; continue }
+        if ((Invoke-Node @('--import', 'tsx', 'scripts/doctor.ts', '--allow-codex-login')) -ne 0) { Write-Startup "Dependencies unavailable (attempt $attempt)."; Start-Sleep -Seconds 10; continue }
         $apiPid = Start-App 'api' 'main'
         $workerPid = Start-App 'worker' 'worker'
         @{ api_pid = $apiPid; worker_pid = $workerPid } | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $runtimeDir 'processes.json')

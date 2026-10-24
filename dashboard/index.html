@@ -7,6 +7,7 @@
     <link rel="stylesheet" href="/dashboard/style.css" />
     <script defer src="/dashboard/app.js"></script>
     <script defer src="/dashboard/reels.js"></script>
+    <script defer src="/dashboard/codex-login.js"></script>
   </head>
   <body>
     <section id="login" class="login" hidden>
@@ -63,6 +64,29 @@
           </div>
           <div id="runtime-strip" class="runtime-strip"></div>
           <div id="notice" class="notice" role="status" hidden></div>
+          <section id="codex-login-panel" class="schedule-panel" aria-label="Đăng nhập Codex">
+            <strong>Codex · Đăng nhập ChatGPT</strong>
+            <p id="codex-login-status" class="hint" role="status">
+              Khi phiên đăng nhập hết hạn, mở lại trang đăng nhập ngay tại đây. Không cần tìm link
+              hoặc copy token.
+            </p>
+            <div class="actions">
+              <button id="codex-login-start" class="primary" type="button">
+                Đăng nhập lại Codex ↗
+              </button>
+              <button id="codex-login-check" class="quiet" type="button">Kiểm tra đăng nhập</button>
+              <button id="codex-login-cancel" class="quiet" type="button" hidden>
+                Hủy phiên đăng nhập
+              </button>
+              <a id="codex-login-link" target="_blank" rel="noopener noreferrer" hidden
+                >Mở lại trang đăng nhập ↗</a
+              >
+            </div>
+            <p class="hint">
+              Dùng trình duyệt trên máy đang chạy app. Sau khi đăng nhập xong, quay lại video lỗi và
+              bấm Thử lại. Đăng nhập lại không làm tăng quota đã hết.
+            </p>
+          </section>
           <section id="production">
             <details class="schedule-panel">
               <summary>Lịch tạo video & upload YouTube · UTC+7</summary>

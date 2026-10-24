@@ -2,6 +2,10 @@
 
 Chỉ thao tác qua web: đặt `TELEGRAM_ENABLED=false` trong `.env`, build và restart cả API/worker. App không polling, không nhận webhook, không xử lý inbox hoặc gửi preview/thông báo Telegram; video vẫn chờ duyệt trên dashboard và lịch YouTube/Reels giữ cấu hình hiện tại. Không cần thông tin đăng nhập Telegram khi đã tắt. Cờ này độc lập `MOCK_TELEGRAM`; bật lại cần chủ động xử lý backlog cũ trước khi nhận lệnh.
 
+Đăng nhập lại Codex: trên dashboard, bấm **Đăng nhập lại Codex ↗**. App tạo link mới bằng browser flow của Codex app-server, mở tab đăng nhập ChatGPT và cập nhật trạng thái khi hoàn tất. Nếu trình duyệt chặn popup, dùng link **Mở lại trang đăng nhập** ngay cạnh nút. Phiên chờ tối đa 10 phút, có thể hủy rồi tạo lại; link không lưu vào DB/log của app. Token do Codex lưu theo cấu hình credential store hiện tại, không gửi về web, không copy vào `.env`. Thực hiện trên trình duyệt cùng máy chạy app vì callback là localhost. Sau đăng nhập, bấm retry ở video lỗi; không tự tạo lại hoặc upload video. Nút **Kiểm tra đăng nhập** yêu cầu Codex refresh/đọc tài khoản, không phải kiểm tra quota. Đăng nhập lại không khôi phục quota đã dùng.
+
+API này chỉ dùng cho dashboard local có xác thực. Xem [OpenAI Docs: Codex authentication](https://learn.chatgpt.com/docs/auth) và [app-server auth endpoints](https://learn.chatgpt.com/docs/app-server#auth-endpoints). API/worker/doctor tự tìm executable mới trong thư mục cài Codex Desktop nếu đường dẫn version cũ đã bị xóa. Startup cho phép thiếu phiên Codex để vẫn vào dashboard đăng nhập lại; lỗi nội dung vẫn hiển thị, không fallback API trả phí.
+
 Hướng dẫn đầy đủ trong một file: [Vận hành local và chuyển máy](HUONG_DAN_VAN_HANH_VA_CHUYEN_MAY.md). Bắt đầu thủ công qua Telegram bằng `/gen-new-video`; cron mặc định tắt.
 
 Pipeline NestJS/TypeScript tạo một bản tin tiếng Việt mỗi ngày: tìm nguồn → chọn 3 mục → script/verify → storyboard → voice + visuals → subtitle → FFmpeg → QC → Telegram review → YouTube.

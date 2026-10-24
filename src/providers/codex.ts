@@ -3,6 +3,7 @@ import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { Config } from '../config';
+import { codexEnvironment, resolveCodexBinary } from '../codex-runtime';
 import { Repository } from '../db';
 import { PermanentError, Work } from '../domain';
 
@@ -50,26 +51,8 @@ export class CodexContent {
       w,
       `Codex ${name} started; ChatGPT subscription quota; API reservation $0; no paid fallback`,
     );
-    const env: NodeJS.ProcessEnv = {};
-    for (const key of [
-      'PATH',
-      'Path',
-      'SystemRoot',
-      'WINDIR',
-      'USERPROFILE',
-      'HOME',
-      'APPDATA',
-      'LOCALAPPDATA',
-      'TEMP',
-      'TMP',
-      'CODEX_HOME',
-      'PATHEXT',
-      'COMSPEC',
-      'HTTP_PROXY',
-      'HTTPS_PROXY',
-      'NO_PROXY',
-    ])
-      if (process.env[key]) env[key] = process.env[key];
+    const env = codexEnvironment();
+    const binary = await resolveCodexBinary(this.c);
     const args = [
       'exec',
       '--disable',
@@ -98,7 +81,7 @@ export class CodexContent {
     if (this.c.CODEX_MODEL) args.push('-m', this.c.CODEX_MODEL);
     args.push('-');
     const events = await new Promise<string>((resolveResult, reject) => {
-      const child = this.launch(this.c.CODEX_PATH, args, {
+      const child = this.launch(binary, args, {
         env,
         cwd: dir,
         shell: false,

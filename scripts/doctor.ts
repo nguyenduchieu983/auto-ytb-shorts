@@ -4,6 +4,7 @@ import { loadConfig } from '../src/config';
 import { access } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { Media, processFile } from '../src/media';
+import { resolveCodexBinary } from '../src/codex-runtime';
 async function main() {
   const c = loadConfig(),
     pool = new Pool({ connectionString: c.DATABASE_URL, connectionTimeoutMillis: 5000 }),
@@ -25,9 +26,11 @@ async function main() {
   if (!c.MOCK_OPENAI && c.CONTENT_PROVIDER === 'codex') {
     checks.push(
       ...(await Promise.allSettled([
-        processFile(c.CODEX_PATH, ['login', 'status'], undefined, 10000).then((output) => {
-          if (!/logged in using chatgpt/i.test(output)) throw new Error('ChatGPT login required');
-        }),
+        resolveCodexBinary(c)
+          .then((binary) => processFile(binary, ['login', 'status'], undefined, 10000))
+          .then((output) => {
+            if (!/logged in using chatgpt/i.test(output)) throw new Error('ChatGPT login required');
+          }),
         Promise.all([
           access(resolve(c.LOCAL_VOICE_PYTHON)),
           ...(c.LOCAL_VOICE_PROVIDER === 'edge'
@@ -81,7 +84,14 @@ async function main() {
   );
   redis.disconnect();
   await pool.end();
-  if (checks.some((r) => r.status === 'rejected')) process.exitCode = 1;
+  if (
+    checks.some(
+      (r, i) =>
+        r.status === 'rejected' &&
+        !(process.argv.includes('--allow-codex-login') && names[i] === 'codex_chatgpt_login'),
+    )
+  )
+    process.exitCode = 1;
 }
 main().catch(() => {
   console.error('Invalid configuration; inspect .env without sharing secrets');
