@@ -2,6 +2,7 @@ import { open, stat } from 'node:fs/promises';
 import { Config } from '../config';
 import { Repository } from '../db';
 import { Metadata, PermanentError, UploadUncertainError, Work } from '../domain';
+import { readYoutubeCredential, youtubeAccess } from '../youtube-credentials';
 
 export function uploadNetworkError(stage: string, error: unknown): Error {
   const e = error as { name?: string; cause?: { code?: string } };
@@ -17,36 +18,22 @@ export function uploadNetworkError(stage: string, error: unknown): Error {
   );
 }
 export class YoutubeProvider {
-  private access?: { value: string; expires: number };
+  private access?: { value: string; expires: number; refresh: string; revision: string };
   constructor(
     private c: Config,
     private repo: Repository,
   ) {}
   private async token(): Promise<string> {
-    if (this.access && this.access.expires > Date.now() + 60000) return this.access.value;
-    const r = await fetch('https://oauth2.googleapis.com/token', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-      body: new URLSearchParams({
-        client_id: this.c.GOOGLE_CLIENT_ID,
-        client_secret: this.c.GOOGLE_CLIENT_SECRET,
-        refresh_token: this.c.YOUTUBE_REFRESH_TOKEN,
-        grant_type: 'refresh_token',
-      }),
-      signal: AbortSignal.timeout(30000),
-    });
-    if (!r.ok) {
-      await r.text();
-      throw new PermanentError(
-        `Google OAuth refresh HTTP ${r.status}; reauthorize if token was revoked`,
-      );
-    }
-    const data: any = await r.json();
-    if (!data.access_token) throw new PermanentError('Missing Google access token');
-    this.access = {
-      value: data.access_token,
-      expires: Date.now() + Number(data.expires_in) * 1000,
-    };
+    const stored = await readYoutubeCredential(this.c);
+    const refresh = stored?.refresh_token || this.c.YOUTUBE_REFRESH_TOKEN;
+    const revision = stored?.updated_at || '';
+    if (
+      this.access?.refresh === refresh &&
+      this.access.revision === revision &&
+      this.access.expires > Date.now() + 60000
+    )
+      return this.access.value;
+    this.access = { ...(await youtubeAccess(this.c, refresh)), refresh, revision };
     return this.access.value;
   }
   private sessionAllowed(uri: string) {

@@ -8,6 +8,7 @@
     <script defer src="/dashboard/app.js"></script>
     <script defer src="/dashboard/reels.js"></script>
     <script defer src="/dashboard/codex-login.js"></script>
+    <script defer src="/dashboard/youtube-login.js"></script>
   </head>
   <body>
     <section id="login" class="login" hidden>
@@ -85,6 +86,35 @@
             <p class="hint">
               Dùng trình duyệt trên máy đang chạy app. Sau khi đăng nhập xong, quay lại video lỗi và
               bấm Thử lại. Đăng nhập lại không làm tăng quota đã hết.
+            </p>
+          </section>
+          <section id="youtube-login-panel" class="schedule-panel" aria-label="Kết nối YouTube">
+            <strong>YouTube · Quyền upload video</strong>
+            <p id="youtube-login-status" class="hint" role="status">
+              Cấp lại quyền khi upload báo Google OAuth 400 hoặc token đã bị thu hồi.
+            </p>
+            <p id="youtube-login-channel" class="hint"></p>
+            <div class="actions">
+              <button id="youtube-login-start" class="primary" type="button">
+                Kết nối lại YouTube ↗
+              </button>
+              <button id="youtube-login-check" class="quiet" type="button">
+                Kiểm tra token YouTube
+              </button>
+              <button id="youtube-login-apply" class="primary" type="button" hidden>
+                Dùng kênh này
+              </button>
+              <button id="youtube-login-cancel" class="quiet" type="button" hidden>
+                Hủy phiên cấp quyền
+              </button>
+              <a id="youtube-login-link" target="_blank" rel="noopener noreferrer" hidden
+                >Mở lại trang Google ↗</a
+              >
+            </div>
+            <p class="hint">
+              Chọn đúng kênh trên Google, sau đó bấm “Dùng kênh này” để lưu. Không cần copy token
+              hoặc restart app; việc cấp quyền không tự upload video. Dùng trình duyệt trên máy đang
+              chạy app.
             </p>
           </section>
           <section id="production">

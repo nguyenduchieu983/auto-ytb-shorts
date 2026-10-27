@@ -56,6 +56,7 @@ const schema = z.object({
   GOOGLE_CLIENT_ID: z.string().default(''),
   GOOGLE_CLIENT_SECRET: z.string().default(''),
   YOUTUBE_REFRESH_TOKEN: z.string().default(''),
+  YOUTUBE_CHANNEL_ID: z.string().default(''),
   YOUTUBE_PRIVACY_STATUS: z.enum(['private', 'unlisted', 'public']).default('private'),
   TELEGRAM_UPDATE_MODE: z.enum(['polling', 'webhook']).default('polling'),
   TELEGRAM_BOT_TOKEN: z.string().default(''),

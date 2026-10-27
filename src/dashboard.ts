@@ -21,6 +21,7 @@ import { STEPS } from './domain';
 import { VideoScheduler } from './video-schedule';
 import { ReelsService } from './reels';
 import { CodexLogin } from './codex-login';
+import { YoutubeLogin } from './youtube-login';
 
 const statuses = [
   'PENDING',
@@ -75,6 +76,9 @@ export class DashboardPublicController {
   @Get('codex-login.js') async codexScript(@Res() res: any) {
     res.type('js').send(await readFile(resolve('dashboard/codex-login.js'), 'utf8'));
   }
+  @Get('youtube-login.js') async youtubeScript(@Res() res: any) {
+    res.type('js').send(await readFile(resolve('dashboard/youtube-login.js'), 'utf8'));
+  }
   @Get('session') session(@Req() req: any, @Res() res: any) {
     res.set('Cache-Control', 'no-store').json({ authenticated: hasSession(req, this.p.c) });
   }
@@ -108,11 +112,14 @@ export class DashboardPublicController {
 @UseGuards(AdminGuard)
 export class DashboardController {
   private codexLogin: CodexLogin;
+  private youtubeLogin: YoutubeLogin;
   constructor(@Inject('PIPELINE') private p: Pipeline) {
     this.codexLogin = new CodexLogin(p.c);
+    this.youtubeLogin = new YoutubeLogin(p.c);
   }
   onModuleDestroy() {
     this.codexLogin.close();
+    this.youtubeLogin.close();
   }
   @Get('codex/login') codexLoginStatus() {
     return this.codexLogin.view();
@@ -125,6 +132,21 @@ export class DashboardController {
   }
   @Post('codex/login/cancel') codexLoginCancel() {
     return this.codexLogin.cancel();
+  }
+  @Get('youtube/login') youtubeLoginStatus() {
+    return this.youtubeLogin.view();
+  }
+  @Post('youtube/login/start') youtubeLoginStart() {
+    return this.youtubeLogin.start();
+  }
+  @Post('youtube/login/check') youtubeLoginCheck() {
+    return this.youtubeLogin.check();
+  }
+  @Post('youtube/login/cancel') youtubeLoginCancel() {
+    return this.youtubeLogin.cancel();
+  }
+  @Post('youtube/login/apply') youtubeLoginApply() {
+    return this.youtubeLogin.apply();
   }
   @Get('reels') async reels(@Query('page') page?: string) {
     return clean(
