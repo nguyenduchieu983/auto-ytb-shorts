@@ -14,6 +14,28 @@ Hướng dẫn đầy đủ trong một file: [Vận hành local và chuyển m�
 
 Pipeline NestJS/TypeScript tạo một bản tin tiếng Việt mỗi ngày: tìm nguồn → chọn 3 mục → script/verify → storyboard → voice + visuals → subtitle → FFmpeg → QC → Telegram review → YouTube.
 
+## Preview sản phẩm từ clip thật
+
+`npm.cmd run video:product -- examples/product-carient-v688.json` dựng bản dọc
+720×1280 từ clip local, lời giới thiệu trong JSON, giọng Edge TTS online và phụ đề
+căn theo word boundaries. Cần `PAID_API_ENABLED=false`, `LOCAL_VOICE_PROVIDER=edge`
+và Python/Edge TTS đã cấu hình. Lệnh không gọi API trả phí, tạo run DB, gửi thông
+báo hoặc upload. Kịch bản trong ví dụ đã được biên tập; lệnh chưa tự sinh kịch bản.
+
+Trước khi chạy, đặt clip của sản phẩm tại đường dẫn `source_video` trong JSON
+(đường dẫn tương đối tính từ thư mục project). Clip không được commit. Ví dụ
+CARIENT dùng clip của shop từ trang sản phẩm, không dùng video đánh giá của khách.
+Nguồn Shopee đã được đọc thủ công qua trình duyệt; chưa có chức năng nhập link
+và tự tải dữ liệu trên dashboard. Nếu trang yêu cầu đăng nhập, cần phiên đọc hợp
+lệ hoặc user cung cấp mô tả/clip. Không suy diễn thông số mâu thuẫn trong trang.
+
+Kết quả nằm trong `storage/product-preview/<id>/preview.mp4`, kèm poster, phụ đề
+và `report.json` ghi nguồn, giới hạn, tốc độ phát clip và kết quả kiểm tra kỹ thuật.
+Nếu lời đọc dài hơn clip, cho phép làm chậm tối đa 1,35 lần thời lượng; vượt mức
+này báo lỗi để sửa kịch bản, không lặp clip vô hạn. Preview là giới thiệu theo
+tư liệu shop, không chứng minh trải nghiệm sử dụng. Xác nhận quyền dùng tư liệu
+trước khi xuất bản công khai.
+
 ## Chạy demo ngay trên Windows
 
 Yêu cầu Node.js 22+. Không cần PostgreSQL, Redis hay API key cho demo.
