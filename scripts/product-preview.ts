@@ -4,7 +4,7 @@ import { resolve, join } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { z } from 'zod';
 import { loadConfig } from '../src/config';
-import { Media, processFile, assText, assTime } from '../src/media';
+import { Media, processFile, assText, assTime, VoiceOutput } from '../src/media';
 import { edgeVoice } from '../src/providers/edge-voice';
 import { Repository } from '../src/db';
 import { Storyboard } from '../src/domain';
@@ -15,6 +15,7 @@ const schema = z.object({
   source_url: z.string().url(),
   source_note: z.string().min(1),
   source_video: z.string().min(1),
+  voice_speed: z.number().min(0.5).max(2).optional(),
   limitations: z.array(z.string()).default([]),
   narration: z.string().min(30).max(1800),
 });
@@ -23,6 +24,10 @@ async function main() {
   if (!process.argv[2]) throw new Error('Usage: npm run video:product -- <spec.json>');
   const spec = schema.parse(JSON.parse(await readFile(resolve(process.argv[2]), 'utf8')));
   const c = loadConfig();
+  if (spec.voice_speed !== undefined) {
+    const percent = Math.round((spec.voice_speed - 1) * 100);
+    c.EDGE_TTS_RATE = `${percent >= 0 ? '+' : ''}${percent}%`;
+  }
   if (c.PAID_API_ENABLED || c.LOCAL_VOICE_PROVIDER !== 'edge')
     throw new Error('Product preview requires paid API disabled and Edge voice');
   const dir = resolve(c.STORAGE_ROOT, 'product-preview', randomUUID());
@@ -35,6 +40,7 @@ async function main() {
     publication: 'local preview only',
     narration_origin: 'supplied editorial script',
     voice_provider: 'Edge TTS (online)',
+    voice_rate: c.EDGE_TTS_RATE,
     events: [],
   };
   const save = () => writeFile(join(dir, 'report.json'), JSON.stringify(report, null, 2));
@@ -61,14 +67,72 @@ async function main() {
         },
       ],
     };
-    const voice = await edgeVoice(
-      c,
-      { log } as unknown as Repository,
-      media,
-      { runId: 'product-preview', revision: 1, step: 'voice' },
-      dir,
-      board,
-    );
+    let voice: VoiceOutput;
+    const reuseIndex = process.argv.indexOf('--reuse-voice');
+    if (reuseIndex >= 0) {
+      if (!process.argv[reuseIndex + 1]) throw new Error('--reuse-voice requires a report path');
+      const priorPath = resolve(process.argv[reuseIndex + 1]);
+      const prior = JSON.parse(await readFile(priorPath, 'utf8'));
+      const priorInput = JSON.parse(
+        await readFile(join(resolve(priorPath, '..'), 'edge-voice-input.json'), 'utf8'),
+      );
+      if (
+        prior.spec?.narration !== spec.narration ||
+        !prior.voice?.words?.length ||
+        prior.status !== 'COMPLETE'
+      )
+        throw new Error('Cached voice must be a completed preview with identical narration');
+      const originalSpeed = 1 + Number.parseFloat(priorInput.rate) / 100;
+      const targetSpeed = 1 + Number.parseFloat(c.EDGE_TTS_RATE) / 100;
+      const factor = targetSpeed / originalSpeed;
+      if (!Number.isFinite(factor) || factor < 0.5 || factor > 2)
+        throw new Error('Cached voice tempo factor must be between 0.5 and 2');
+      const path = join(dir, 'voice.mp3');
+      await processFile(media.ffmpeg, [
+        '-y',
+        '-i',
+        prior.voice.path,
+        '-af',
+        `atempo=${factor}`,
+        '-c:a',
+        'libmp3lame',
+        '-q:a',
+        '2',
+        path,
+      ]);
+      const duration = Number((await media.probe(path)).format.duration);
+      voice = {
+        ...prior.voice,
+        path,
+        duration,
+        words: prior.voice.words.map((w: any) => ({
+          ...w,
+          start: w.start / factor,
+          end: Math.min(duration, w.end / factor),
+        })),
+        timings: prior.voice.timings.map((t: any) => ({
+          ...t,
+          start: t.start / factor,
+          end: Math.min(duration, t.end / factor),
+        })),
+        timing_method: 'cached-edge-word-boundaries-scaled-by-atempo',
+      };
+      report.voice_provider = 'Cached Edge TTS + FFmpeg atempo';
+      report.reused_voice_report = priorPath;
+      report.voice_tempo_factor = factor;
+      await log(
+        null,
+        `Reusing existing voice: ${priorInput.rate} to ${c.EDGE_TTS_RATE}; pitch preserved`,
+      );
+    } else
+      voice = await edgeVoice(
+        c,
+        { log } as unknown as Repository,
+        media,
+        { runId: 'product-preview', revision: 1, step: 'voice' },
+        dir,
+        board,
+      );
     if (!voice.words?.length) throw new Error('Missing voice word boundaries');
     if (voice.duration > sourceDuration * 1.35)
       throw new Error('Narration too long for source clip; shorten script or supply a longer clip');

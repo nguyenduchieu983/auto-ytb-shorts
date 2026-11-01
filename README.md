@@ -19,8 +19,17 @@ Pipeline NestJS/TypeScript tạo một bản tin tiếng Việt mỗi ngày: tì
 `npm.cmd run video:product -- examples/product-carient-v688.json` dựng bản dọc
 720×1280 từ clip local, lời giới thiệu trong JSON, giọng Edge TTS online và phụ đề
 căn theo word boundaries. Cần `PAID_API_ENABLED=false`, `LOCAL_VOICE_PROVIDER=edge`
-và Python/Edge TTS đã cấu hình. Lệnh không gọi API trả phí, tạo run DB, gửi thông
+và có thể chọn `voice_speed` trong JSON (0,5–2; `1.25` là tốc độ chuẩn ×1,25,
+tương ứng Edge rate `+25%`). Khi bỏ trống, dùng `EDGE_TTS_RATE` hiện tại. Phụ đề
+được căn lại theo giọng mới. Cần Python/Edge TTS đã cấu hình.
+Lệnh không gọi API trả phí, tạo run DB, gửi thông
 báo hoặc upload. Kịch bản trong ví dụ đã được biên tập; lệnh chưa tự sinh kịch bản.
+
+Để tái dùng giọng đã tạo khi Edge không khả dụng, thêm
+`--reuse-voice storage/product-preview/<id>/report.json`. Chỉ nhận bản COMPLETE
+có cùng lời đọc và file `edge-voice-input.json` gốc. Lệnh đổi tempo bằng FFmpeg,
+giữ cao độ, đổi thời gian phụ đề tương ứng và ghi rõ nguồn giọng tái sử dụng
+trong report; không tự fallback sang chế độ này.
 
 Trước khi chạy, đặt clip của sản phẩm tại đường dẫn `source_video` trong JSON
 (đường dẫn tương đối tính từ thư mục project). Clip không được commit. Ví dụ
